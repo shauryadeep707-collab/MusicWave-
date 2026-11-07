@@ -241,18 +241,55 @@ const App = {
             });
         });
 
-        // Search Input debounced
+        // Search Input with Live Instant Autofill & Keyboard Support
         const searchInput = document.getElementById('global-search-input');
-        let searchTimeout = null;
+        const autofillDropdown = document.getElementById('search-autofill-dropdown');
+        let autocompleteTimeout = null;
+
         if (searchInput) {
+            // Live instant autofill suggestions on typing
             searchInput.addEventListener('input', (e) => {
                 const query = e.target.value.trim();
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    if (query.length > 0) {
-                        this.navigateTo('search', query);
-                    }
-                }, 350);
+                clearTimeout(autocompleteTimeout);
+
+                if (!autofillDropdown) return;
+
+                if (query.length < 2) {
+                    autofillDropdown.classList.remove('active');
+                    autofillDropdown.innerHTML = '';
+                    return;
+                }
+
+                autocompleteTimeout = setTimeout(() => {
+                    this.fetchAndRenderAutofill(query);
+                }, 140);
+            });
+
+            // Enter key directly triggers search; Escape closes dropdown
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    clearTimeout(autocompleteTimeout);
+                    if (autofillDropdown) autofillDropdown.classList.remove('active');
+                    const q = searchInput.value.trim();
+                    if (q) this.navigateTo('search', q);
+                } else if (e.key === 'Escape') {
+                    if (autofillDropdown) autofillDropdown.classList.remove('active');
+                }
+            });
+
+            // Re-open on focus if text present
+            searchInput.addEventListener('focus', () => {
+                const q = searchInput.value.trim();
+                if (autofillDropdown && q.length >= 2 && autofillDropdown.children.length > 0) {
+                    autofillDropdown.classList.add('active');
+                }
+            });
+
+            // Dismiss dropdown on outside click
+            document.addEventListener('click', (e) => {
+                if (autofillDropdown && !searchInput.contains(e.target) && !autofillDropdown.contains(e.target)) {
+                    autofillDropdown.classList.remove('active');
+                }
             });
         }
 
@@ -724,6 +761,81 @@ const App = {
         } catch (e) {
             UI.showToast('Could not load version: ' + e.message, 'error');
         }
+    },
+
+    async fetchAndRenderAutofill(query) {
+        const dropdown = document.getElementById('search-autofill-dropdown');
+        if (!dropdown) return;
+
+        try {
+            const res = await API.getAutocomplete(query);
+            const suggestions = res.suggestions || [];
+            const tracks = res.tracks || [];
+
+            if (suggestions.length === 0 && tracks.length === 0) {
+                dropdown.classList.remove('active');
+                dropdown.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+
+            // 1. Direct Matching Songs (Instant Play)
+            if (tracks.length > 0) {
+                html += `<div class="autofill-section-title">🎵 Direct Song Matches</div>`;
+                tracks.forEach(track => {
+                    const trackJSON = JSON.stringify(track).replace(/"/g, '&quot;');
+                    const isLofi = track.version_type === 'lofi' || /lofi|lo-fi|slowed/i.test(track.title);
+                    const badge = isLofi 
+                        ? `<span class="badge" style="background: rgba(245, 158, 11, 0.25); color: var(--accent-amber); font-size: 0.65rem; margin-left: auto;">☕ Lo-Fi</span>`
+                        : `<span class="badge" style="background: rgba(139, 92, 246, 0.25); color: var(--primary); font-size: 0.65rem; margin-left: auto;">👑 Official</span>`;
+
+                    html += `
+                        <div class="autofill-track-item" onclick="App.selectAutofillTrack(${trackJSON})">
+                            <img src="${track.artwork_url || '/static/images/default-cover.png'}" class="autofill-track-img" alt="${track.title}"/>
+                            <div style="min-width: 0; flex: 1;">
+                                <div class="autofill-track-title truncate">${track.title}</div>
+                                <div class="autofill-track-artist truncate">${track.artist_name}</div>
+                            </div>
+                            ${badge}
+                        </div>
+                    `;
+                });
+            }
+
+            // 2. Query Autocomplete Suggestions (Fill & Search)
+            if (suggestions.length > 0) {
+                html += `<div class="autofill-section-title">🔍 Search Suggestions</div>`;
+                suggestions.forEach(s => {
+                    const safe = s.replace(/'/g, "\\'");
+                    html += `
+                        <div class="autofill-query-item" onclick="App.selectAutofillQuery('${safe}')">
+                            <svg class="autofill-query-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <span class="truncate">${s}</span>
+                        </div>
+                    `;
+                });
+            }
+
+            dropdown.innerHTML = html;
+            dropdown.classList.add('active');
+        } catch (e) {
+            console.warn('Autofill error:', e);
+        }
+    },
+
+    selectAutofillTrack(track) {
+        const dropdown = document.getElementById('search-autofill-dropdown');
+        if (dropdown) dropdown.classList.remove('active');
+        this.playTrack(track);
+    },
+
+    selectAutofillQuery(query) {
+        const input = document.getElementById('global-search-input');
+        const dropdown = document.getElementById('search-autofill-dropdown');
+        if (input) input.value = query;
+        if (dropdown) dropdown.classList.remove('active');
+        this.navigateTo('search', query);
     }
 };
 

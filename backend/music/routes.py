@@ -1,3 +1,4 @@
+import requests
 from backend.search.normalizer import normalize_search_query, clean_title, clean_artist
 from flask import Blueprint, jsonify, request
 import re
@@ -43,6 +44,55 @@ def get_recommendations():
     for t in tracks:
         tag_track_version(t)
     return jsonify({'recommendations': tracks}), 200
+
+@music_bp.route('/autocomplete', methods=['GET'])
+def autocomplete_search():
+    """Instant live search autofill suggestions and direct song matches."""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'suggestions': [], 'tracks': []}), 200
+
+    # 1. Direct song matches from local/cached database
+    pattern = f"%{q}%"
+    db_matches = query_db("""
+        SELECT id, provider_id, provider_track_id, title, artist_name, artwork_url, duration, genre, stream_url
+        FROM tracks
+        WHERE title LIKE ? OR artist_name LIKE ?
+        ORDER BY play_count DESC
+        LIMIT 4
+    """, (pattern, pattern))
+
+    for t in db_matches:
+        t['title'] = clean_title(t.get('title', ''))
+        t['artist_name'] = clean_artist(t.get('artist_name', ''))
+        tag_track_version(t)
+
+    # 2. Instant query completions via YouTube suggestion engine
+    suggestions = []
+    try:
+        url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={requests.utils.quote(q)}"
+        resp = requests.get(url, timeout=1.8)
+        if resp.status_code == 200:
+            data = resp.json()
+            if len(data) > 1 and isinstance(data[1], list):
+                for s in data[1][:6]:
+                    cleaned = clean_title(s)
+                    if cleaned and cleaned.lower() not in [x.lower() for x in suggestions]:
+                        suggestions.append(cleaned)
+    except Exception as e:
+        print(f"[Autocomplete Suggestion notice]: {e}")
+
+    # Fallback normalizer
+    if not suggestions:
+        norm = normalize_search_query(q)
+        if norm.get('normalized') and norm['normalized'].lower() != q.lower():
+            suggestions.append(norm['normalized'])
+
+    return jsonify({
+        'query': q,
+        'suggestions': suggestions[:6],
+        'tracks': db_matches
+    }), 200
 
 @music_bp.route('/search', methods=['GET'])
 def search_tracks():
