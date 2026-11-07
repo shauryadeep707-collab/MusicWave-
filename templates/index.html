@@ -423,11 +423,11 @@
                 <div style="margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                         <label style="font-size: 0.82rem; color: var(--text-secondary);">Password <span style="color:var(--accent-rose);">*</span></label>
-                        <span id="auth-password-hint" style="font-size: 0.74rem; color: var(--text-muted); display: none;">Min. 6 characters</span>
+                        <span id="auth-password-hint" style="font-size: 0.74rem; color: var(--text-muted); display: none;">Min. 3 characters</span>
                     </div>
                     <div style="position: relative;">
-                        <input type="password" id="auth-password-input" class="search-input" style="width: 100%; padding: 10px 42px 10px 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: white;" placeholder="••••••••">
-                        <button type="button" onclick="App.togglePasswordVisibility('auth-password-input', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.95rem; padding: 4px;">👁️</button>
+                        <input type="password" id="auth-password-input" class="search-input" style="width: 100%; padding: 10px 42px 10px 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: white;" placeholder="Enter password" autocomplete="current-password">
+                        <button type="button" onclick="App.togglePasswordVisibility('auth-password-input', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.95rem; padding: 4px;" title="Show/Hide Password">👁️</button>
                     </div>
                 </div>
 

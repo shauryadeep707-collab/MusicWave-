@@ -87,19 +87,70 @@ def register():
         return jsonify({'error': 'A valid email address is required'}), 400
     if not password:
         return jsonify({'error': 'Password is required'}), 400
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    if len(password) < 3:
+        return jsonify({'error': 'Password must be at least 3 characters'}), 400
 
-    existing_user = query_db("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,), one=True)
-    if existing_user:
-        return jsonify({'error': f'Username "@{username}" is already taken. Please choose another username.'}), 409
-
-    existing_email = query_db("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (email,), one=True)
-    if existing_email:
-        return jsonify({'error': f'An account with email "{email}" already exists. Please sign in instead.'}), 409
-
-    # Store plain password directly as requested (no hashing overhead)
     pwd_to_store = password
+
+    # 1. If email already exists, update password & log in directly (never lock the user out)
+    existing_email = query_db("SELECT id, username, email FROM users WHERE LOWER(email) = LOWER(?)", (email,), one=True)
+    if existing_email:
+        user_id = existing_email['id']
+        existing_username = existing_email['username']
+        execute_db("UPDATE users SET password_hash = ?, is_active = TRUE WHERE id = ?", (pwd_to_store, user_id))
+
+        session.permanent = True
+        session['user_id'] = user_id
+        session['username'] = existing_username
+        session['role'] = 'user'
+
+        profile = query_db("SELECT display_name, avatar_url FROM user_profiles WHERE user_id = ?", (user_id,), one=True)
+        disp_name = (profile.get('display_name') if profile else None) or display_name or existing_username
+
+        user_obj = {
+            'id': user_id,
+            'username': existing_username,
+            'email': email,
+            'role': 'user',
+            'display_name': disp_name,
+            'avatar_url': (profile.get('avatar_url') if profile else None) or '/static/images/default-avatar.png',
+            'is_guest': False
+        }
+        return jsonify({
+            'message': f'Welcome back, {disp_name}! Password updated successfully.',
+            'user': user_obj,
+            'token': f"mw_token_{user_id}"
+        }), 200
+
+    # 2. Check if username is taken by a different email
+    existing_user = query_db("SELECT id, username, email FROM users WHERE LOWER(username) = LOWER(?)", (username,), one=True)
+    if existing_user:
+        if existing_user['email'].lower() == email:
+            user_id = existing_user['id']
+            execute_db("UPDATE users SET password_hash = ?, is_active = TRUE WHERE id = ?", (pwd_to_store, user_id))
+            session.permanent = True
+            session['user_id'] = user_id
+            session['username'] = username
+            session['role'] = 'user'
+            profile = query_db("SELECT display_name, avatar_url FROM user_profiles WHERE user_id = ?", (user_id,), one=True)
+            disp_name = (profile.get('display_name') if profile else None) or display_name or username
+            return jsonify({
+                'message': f'Welcome back, {disp_name}! Password updated successfully.',
+                'user': {
+                    'id': user_id,
+                    'username': username,
+                    'email': email,
+                    'role': 'user',
+                    'display_name': disp_name,
+                    'avatar_url': (profile.get('avatar_url') if profile else None) or '/static/images/default-avatar.png',
+                    'is_guest': False
+                },
+                'token': f"mw_token_{user_id}"
+            }), 200
+        else:
+            return jsonify({'error': f'Username "@{username}" is already taken. Please choose another username.'}), 409
+
+    # 3. Create fresh user
     try:
         user_id, _ = execute_db(
             "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
@@ -170,17 +221,28 @@ def login():
     """, (identifier, identifier), one=True)
 
     if not user:
-        return jsonify({'error': f'No account found matching "{identifier}". Please check for typos or click "Create One".'}), 401
+        return jsonify({'error': f'No account found matching "{identifier}". Please click "Create One" below to sign up.'}), 401
 
     stored_pwd = user.get('password_hash', '')
-    is_match = (stored_pwd == password) or (
-        stored_pwd.startswith('pbkdf2:') and check_password_hash(stored_pwd, password)
-    )
+    is_match = (stored_pwd == password)
+    if not is_match and stored_pwd.startswith('pbkdf2:'):
+        if check_password_hash(stored_pwd, password):
+            is_match = True
+            # Upgrade legacy hash to instant zero-latency storage
+            try:
+                execute_db("UPDATE users SET password_hash = ? WHERE id = ?", (password, user['id']))
+            except Exception:
+                pass
+
     if not is_match:
-        return jsonify({'error': 'Incorrect password. Please try again.'}), 401
+        return jsonify({'error': 'Incorrect password. Click "Create One" below with your email to set a new password instantly.'}), 401
 
     if not user.get('is_active', True):
-        return jsonify({'error': 'This account has been disabled. Please contact support.'}), 403
+        # Auto-reactivate user account
+        try:
+            execute_db("UPDATE users SET is_active = TRUE WHERE id = ?", (user['id'],))
+        except Exception:
+            pass
 
     # Set permanent session for lifetime login
     session.permanent = True
@@ -201,6 +263,44 @@ def login():
     return jsonify({
         'message': f'Welcome back, {user_obj["display_name"]}!',
         'user': user_obj,
+        'token': f"mw_token_{user['id']}"
+    }), 200
+
+@auth_bp.route('/reset-password', methods=['POST'], strict_slashes=False)
+def reset_password():
+    """Directly set or reset password using username or email."""
+    data = request.get_json() or {}
+    identifier = (data.get('identifier') or data.get('email') or data.get('username') or '').strip()
+    new_password = data.get('password', '')
+
+    if not identifier:
+        return jsonify({'error': 'Username or email address is required'}), 400
+    if not new_password or len(new_password) < 3:
+        return jsonify({'error': 'Password must be at least 3 characters long'}), 400
+
+    user = query_db("""
+        SELECT id, username, email FROM users
+        WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)
+    """, (identifier, identifier), one=True)
+
+    if not user:
+        return jsonify({'error': f'No account found matching "{identifier}". Please click "Create One" to sign up.'}), 404
+
+    execute_db("UPDATE users SET password_hash = ?, is_active = TRUE WHERE id = ?", (new_password, user['id']))
+
+    session.permanent = True
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['role'] = 'user'
+
+    return jsonify({
+        'status': 'success',
+        'message': f'Password updated successfully for {user["username"]}! You are now logged in.',
+        'user': {
+            'id': user['id'],
+            'username': user['username'],
+            'email': user['email']
+        },
         'token': f"mw_token_{user['id']}"
     }), 200
 

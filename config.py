@@ -17,8 +17,11 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     
-    # Database (Supabase PostgreSQL with automatic fallback)
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:music%401206shaurya@db.vegprsyufbvdzpoyclln.supabase.co:5432/postgres").strip()
+    # Database (Supabase PostgreSQL via IPv4 Session Pooler)
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        "postgresql://postgres.vegprsyufbvdzpoyclln:music%401206shaurya@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres"
+    ).strip()
     DATABASE_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "instance" / "musicwave.db"))
     
     # Upload Directories

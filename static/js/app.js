@@ -1341,8 +1341,8 @@ const App = {
                 if (!email || !email.includes('@')) {
                     throw new Error('Please enter a valid email address.');
                 }
-                if (!pwd || pwd.length < 6) {
-                    throw new Error('Password must be at least 6 characters long.');
+                if (!pwd || pwd.length < 3) {
+                    throw new Error('Password must be at least 3 characters long.');
                 }
 
                 res = await API.register(username, email, pwd, displayName || username);

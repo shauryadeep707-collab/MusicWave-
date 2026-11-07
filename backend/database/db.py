@@ -18,6 +18,19 @@ except ImportError:
 _pg_pool = None
 _pool_lock = threading.Lock()
 
+def normalize_db_url(db_url: str) -> str:
+    """Normalize database URL and auto-translate direct Supabase host to IPv4 session pooler."""
+    if not db_url:
+        return db_url
+    db_url = db_url.strip()
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql://', 1)
+    # Automatic IPv4 Pooler translation for Supabase (resolves Render IPv6 network unreachable)
+    if 'db.vegprsyufbvdzpoyclln.supabase.co' in db_url:
+        db_url = db_url.replace('db.vegprsyufbvdzpoyclln.supabase.co', 'aws-0-ap-northeast-1.pooler.supabase.com')
+        db_url = re.sub(r'://postgres:', r'://postgres.vegprsyufbvdzpoyclln:', db_url)
+    return db_url
+
 def get_pg_pool():
     """Thread-safe lazy initialization of PostgreSQL connection pool (max 8 connections)."""
     global _pg_pool
@@ -27,14 +40,13 @@ def get_pg_pool():
                 try:
                     from flask import current_app, has_app_context
                     if has_app_context():
-                        db_url = current_app.config.get('DATABASE_URL', '')
+                        raw_url = current_app.config.get('DATABASE_URL', '')
                     else:
                         from config import Config
-                        db_url = getattr(Config, 'DATABASE_URL', '')
+                        raw_url = getattr(Config, 'DATABASE_URL', '')
 
+                    db_url = normalize_db_url(raw_url)
                     if db_url and (db_url.startswith('postgresql://') or db_url.startswith('postgres://')):
-                        if db_url.startswith('postgres://'):
-                            db_url = db_url.replace('postgres://', 'postgresql://', 1)
                         # Bounded connection pool to respect Supabase connection limits and reuse TLS sockets
                         _pg_pool = ThreadedConnectionPool(minconn=1, maxconn=8, dsn=db_url, connect_timeout=6)
                 except Exception as e:
@@ -99,9 +111,8 @@ def get_db():
             
             if conn is None and PSYCOPG2_AVAILABLE:
                 try:
-                    db_url = current_app.config.get('DATABASE_URL', '')
-                    if db_url.startswith('postgres://'):
-                        db_url = db_url.replace('postgres://', 'postgresql://', 1)
+                    raw_url = current_app.config.get('DATABASE_URL', '')
+                    db_url = normalize_db_url(raw_url)
                     conn = psycopg2.connect(db_url, connect_timeout=5)
                     conn.autocommit = False
                 except Exception as direct_err:
