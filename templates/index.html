@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MusicWave – Free Online & Offline Music Streaming</title>
+    
+    <!-- Meta & Branding -->
+    <meta name="description" content="MusicWave is a free music streaming and social listening platform with offline downloads and synchronized Jam rooms.">
+    <meta name="theme-color" content="#0a0a10">
+    <link rel="manifest" href="/static/manifest.json">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/player.css">
+
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <div id="app-container">
+        <!-- ==============================================
+             LEFT SIDEBAR NAVIGATION
+             ============================================== -->
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <a href="javascript:void(0)" class="brand-logo" onclick="App.navigateTo('home')">
+                    <div class="logo-badge">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                            <path d="M2 12h2M6 8v8M10 4v16M14 8v8M18 10v4M22 12h-2"/>
+                        </svg>
+                    </div>
+                    <span>MusicWave</span>
+                </a>
+            </div>
+
+            <!-- Menu Navigation -->
+            <div class="sidebar-section">
+                <div class="sidebar-label">Menu</div>
+                <ul class="nav-list">
+                    <li class="nav-item active" data-page="home">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('home')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                            <span>Home</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" data-page="explore">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('explore')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+                            <span>Explore</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" data-page="search">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('search')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <span>Search</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Library & Offline -->
+            <div class="sidebar-section">
+                <div class="sidebar-label">Your Library</div>
+                <ul class="nav-list">
+                    <li class="nav-item" data-page="library">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('library')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            <span>Playlists</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" data-page="downloads">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('downloads')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            <span>Downloads</span>
+                            <span class="badge">Offline</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" data-page="favourites">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('favourites')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                            <span>Favourites</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Social & Jam -->
+            <div class="sidebar-section">
+                <div class="sidebar-label">Social Listening</div>
+                <ul class="nav-list">
+                    <li class="nav-item" data-page="jams">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('jams')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            <span>Music Jams</span>
+                            <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-amber);">Live</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" data-page="friends">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('friends')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                            <span>Friends</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- General -->
+            <div class="sidebar-section" style="margin-top: auto;">
+                <ul class="nav-list">
+                    <li class="nav-item" data-page="settings">
+                        <a href="javascript:void(0)" onclick="App.navigateTo('settings')">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            <span>Settings</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- ==============================================
+             MAIN WORKSPACE
+             ============================================== -->
+        <main class="app-main">
+            <!-- Top Navigation Bar -->
+            <header class="app-topbar">
+                <div class="topbar-left">
+                    <div class="search-bar-wrapper">
+                        <svg class="search-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" id="global-search-input" class="search-input" placeholder="Search songs, artists, genres, or Jams..." autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="topbar-right">
+                    <!-- Online / Offline Connectivity Indicator -->
+                    <div class="status-pill" id="online-status-pill">
+                        <span class="status-indicator-dot"></span>
+                        <span>Online</span>
+                    </div>
+
+                    <!-- Notifications Bell -->
+                    <button class="icon-btn" title="Notifications" onclick="App.navigateTo('notifications')">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    </button>
+
+                    <!-- User Profile / Auth Button -->
+                    <div class="user-profile-trigger" id="user-profile-btn" onclick="App.openAuthModal('login')">
+                        <span style="font-weight: 600; font-size: 0.85rem; padding: 4px 8px;">Sign In</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dynamic View Container -->
+            <div class="main-view-container" id="main-content">
+                <!-- Injected dynamically by UI engine -->
+            </div>
+        </main>
+
+        <!-- ==============================================
+             PERSISTENT BOTTOM MUSIC PLAYER
+             ============================================== -->
+        <footer class="app-player">
+            <!-- Track Info Left -->
+            <div class="player-track-info">
+                <div class="player-artwork-wrapper">
+                    <img id="player-current-artwork" src="/static/images/default-cover.png" class="player-artwork" alt="Current Track" />
+                </div>
+                <div class="player-text-details">
+                    <div class="player-song-title truncate" id="player-current-title">Select a track to play</div>
+                    <div class="player-artist-name truncate" id="player-current-artist">MusicWave Player</div>
+                </div>
+                <button class="player-like-btn" id="player-like-btn" title="Favourite" onclick="App.toggleCurrentFavourite()">
+                    <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                </button>
+            </div>
+
+            <!-- Controls & Timeline Center -->
+            <div class="player-center-controls">
+                <div class="playback-buttons">
+                    <button class="control-btn" id="player-shuffle-btn" title="Shuffle" onclick="App.toggleShuffle()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+                    </button>
+                    <button class="control-btn" id="player-prev-btn" title="Previous" onclick="App.prevTrack()">
+                        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                    </button>
+                    <button class="play-pause-btn" id="player-play-btn" title="Play/Pause" onclick="App.togglePlay()">
+                        <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <button class="control-btn" id="player-next-btn" title="Next" onclick="App.nextTrack()">
+                        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                    </button>
+                    <button class="control-btn" id="player-repeat-btn" title="Repeat" onclick="App.toggleRepeat()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+                    </button>
+                </div>
+
+                <div class="timeline-bar">
+                    <span class="time-label current" id="player-current-time">0:00</span>
+                    <div class="progress-container" id="player-progress-container">
+                        <div class="progress-filled" id="player-progress-fill">
+                            <span class="progress-thumb"></span>
+                        </div>
+                    </div>
+                    <span class="time-label" id="player-total-time">0:00</span>
+                </div>
+            </div>
+
+            <!-- Volume & Quick Actions Right -->
+            <div class="player-right-actions">
+                <div class="volume-wrapper">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="color:var(--text-muted);"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                    <input type="range" class="volume-slider" id="player-volume-slider" min="0" max="1" step="0.01" value="0.8">
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- ==============================================
+         AUTH MODAL
+         ============================================== -->
+    <div class="modal-overlay" id="auth-modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title" id="auth-modal-title">Sign In to MusicWave</h3>
+                <button class="icon-btn" onclick="App.closeAuthModal()">✕</button>
+            </div>
+            <form onsubmit="App.handleAuthSubmit(event)">
+                <div id="auth-name-group" style="display: none; margin-bottom: 14px;">
+                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Username</label>
+                    <input type="text" id="auth-username-input" style="width: 100%; padding: 10px 14px;" placeholder="Choose a username">
+                </div>
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Email Address</label>
+                    <input type="email" id="auth-email-input" required style="width: 100%; padding: 10px 14px;" placeholder="you@example.com">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Password</label>
+                    <input type="password" id="auth-password-input" required minlength="6" style="width: 100%; padding: 10px 14px;" placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn-primary" id="auth-modal-submit" style="width: 100%; padding: 12px; font-size: 1rem; margin-bottom: 14px;">Sign In</button>
+                <div id="auth-modal-switch" style="text-align: center; font-size: 0.85rem; color: var(--text-secondary);">
+                    Don't have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('register')" style="color:var(--primary); font-weight:600;">Create One</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/state.js"></script>
+    <script src="/static/js/ui.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

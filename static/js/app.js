@@ -1,0 +1,449 @@
+/**
+ * MusicWave - Main Client Application Bootstrap & Controller
+ */
+const App = {
+    audio: new Audio(),
+
+    async init() {
+        console.log("🎵 MusicWave Engine Initializing...");
+        
+        // Setup Audio Player Event Listeners
+        this.setupAudioListeners();
+
+        // Setup Network Status Listeners
+        this.setupNetworkListeners();
+
+        // Setup UI State Subscriptions
+        this.setupSubscriptions();
+
+        // Setup Global DOM Listeners
+        this.setupDOMListeners();
+
+        // Check current session
+        await this.checkAuth();
+
+        // Initial Routing based on path
+        this.handleInitialRoute();
+    },
+
+    setupAudioListeners() {
+        const audio = this.audio;
+
+        audio.addEventListener('play', () => {
+            State.set('isPlaying', true);
+        });
+
+        audio.addEventListener('pause', () => {
+            State.set('isPlaying', false);
+        });
+
+        audio.addEventListener('timeupdate', () => {
+            State.set('currentTime', audio.currentTime);
+            this.updateProgressBar(audio.currentTime, audio.duration);
+        });
+
+        audio.addEventListener('loadedmetadata', () => {
+            State.set('duration', audio.duration);
+            const totalEl = document.getElementById('player-total-time');
+            if (totalEl) totalEl.textContent = UI.formatTime(audio.duration);
+        });
+
+        audio.addEventListener('ended', () => {
+            const repeatMode = State.get('repeatMode');
+            if (repeatMode === 'one') {
+                audio.currentTime = 0;
+                audio.play();
+            } else {
+                this.nextTrack();
+            }
+        });
+
+        audio.addEventListener('error', (e) => {
+            console.error('Audio playback error:', e);
+            UI.showToast('Unable to stream this audio source. Skipping to next...', 'error');
+            setTimeout(() => this.nextTrack(), 1500);
+        });
+    },
+
+    setupNetworkListeners() {
+        const updateOnlineStatus = () => {
+            const isOnline = navigator.onLine;
+            State.set('isOnline', isOnline);
+            const pill = document.getElementById('online-status-pill');
+            if (pill) {
+                if (isOnline) {
+                    pill.className = 'status-pill';
+                    pill.innerHTML = '<span class="status-indicator-dot"></span> Online';
+                    UI.showToast('Back online! Syncing services...', 'success');
+                } else {
+                    pill.className = 'status-pill offline';
+                    pill.innerHTML = '<span class="status-indicator-dot"></span> Offline';
+                    UI.showToast('You are offline. Switching to local downloads.', 'error');
+                }
+            }
+        };
+
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+    },
+
+    setupSubscriptions() {
+        // Track change subscription
+        State.subscribe('currentTrack', (track) => {
+            if (!track) return;
+            const artworkEl = document.getElementById('player-current-artwork');
+            const titleEl = document.getElementById('player-current-title');
+            const artistEl = document.getElementById('player-current-artist');
+            const likeBtn = document.getElementById('player-like-btn');
+
+            if (artworkEl) artworkEl.src = track.artwork_url || '/static/images/default-cover.png';
+            if (titleEl) titleEl.textContent = track.title || 'Unknown Track';
+            if (artistEl) artistEl.textContent = track.artist_name || 'Unknown Artist';
+            if (likeBtn) likeBtn.classList.remove('liked');
+        });
+
+        // Playback state subscription
+        State.subscribe('isPlaying', (isPlaying) => {
+            const playBtn = document.getElementById('player-play-btn');
+            if (!playBtn) return;
+            if (isPlaying) {
+                playBtn.innerHTML = '<svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+            } else {
+                playBtn.innerHTML = '<svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+            }
+        });
+
+        // Current time subscription
+        State.subscribe('currentTime', (curr) => {
+            const currentEl = document.getElementById('player-current-time');
+            if (currentEl) currentEl.textContent = UI.formatTime(curr);
+        });
+
+        // Repeat mode
+        State.subscribe('repeatMode', (mode) => {
+            const btn = document.getElementById('player-repeat-btn');
+            if (btn) {
+                btn.classList.toggle('active', mode !== 'off');
+            }
+        });
+
+        // Shuffle
+        State.subscribe('shuffle', (shuffle) => {
+            const btn = document.getElementById('player-shuffle-btn');
+            if (btn) {
+                btn.classList.toggle('active', shuffle);
+            }
+        });
+    },
+
+    setupDOMListeners() {
+        // Navigation links
+        document.querySelectorAll('[data-route]').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                const route = el.dataset.route;
+                this.navigateTo(route);
+            });
+        });
+
+        // Search Input debounced
+        const searchInput = document.getElementById('global-search-input');
+        let searchTimeout = null;
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    if (query.length > 0) {
+                        this.navigateTo('search', query);
+                    }
+                }, 350);
+            });
+        }
+
+        // Seek Bar Click / Drag
+        const progressContainer = document.getElementById('player-progress-container');
+        if (progressContainer) {
+            progressContainer.addEventListener('click', (e) => {
+                const rect = progressContainer.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                if (this.audio.duration) {
+                    this.audio.currentTime = pos * this.audio.duration;
+                }
+            });
+        }
+
+        // Volume Slider
+        const volumeSlider = document.getElementById('player-volume-slider');
+        if (volumeSlider) {
+            volumeSlider.addEventListener('input', (e) => {
+                const vol = parseFloat(e.target.value);
+                this.audio.volume = vol;
+                State.set('volume', vol);
+            });
+        }
+    },
+
+    updateProgressBar(current, duration) {
+        if (!duration) return;
+        const pct = (current / duration) * 100;
+        const fill = document.getElementById('player-progress-fill');
+        if (fill) fill.style.width = `${pct}%`;
+    },
+
+    async checkAuth() {
+        try {
+            const res = await API.getMe();
+            if (res.authenticated && res.user) {
+                State.set('user', res.user);
+                this.updateUserUI(res.user);
+            }
+        } catch (e) {
+            console.warn('Auth check skipped (offline or unauthenticated)');
+        }
+    },
+
+    updateUserUI(user) {
+        const userBtn = document.getElementById('user-profile-btn');
+        if (!userBtn) return;
+        if (user) {
+            userBtn.innerHTML = `
+                <div class="user-avatar-sm">${user.username.charAt(0).toUpperCase()}</div>
+                <span style="font-weight: 600; font-size: 0.85rem;">${user.display_name || user.username}</span>
+            `;
+            userBtn.onclick = () => this.navigateTo('profile');
+        } else {
+            userBtn.innerHTML = `<span style="font-weight: 600; font-size: 0.85rem; padding: 4px 8px;">Sign In</span>`;
+            userBtn.onclick = () => this.openAuthModal('login');
+        }
+    },
+
+    handleInitialRoute() {
+        const path = window.location.pathname.replace(/^\//, '') || 'home';
+        this.navigateTo(path);
+    },
+
+    navigateTo(page, param = null) {
+        State.set('activePage', page);
+        UI.updateActiveNav(page);
+        window.history.pushState({}, '', `/${page === 'home' ? '' : page}`);
+
+        switch (page) {
+            case 'home':
+                UI.renderHome();
+                break;
+            case 'explore':
+                UI.renderExplore();
+                break;
+            case 'search':
+                UI.renderSearch(param || '');
+                break;
+            case 'library':
+                UI.renderLibrary();
+                break;
+            case 'downloads':
+                UI.renderDownloads();
+                break;
+            case 'favourites':
+                UI.renderFavourites();
+                break;
+            case 'jams':
+                UI.renderJams();
+                break;
+            case 'friends':
+                UI.renderFriends();
+                break;
+            case 'profile':
+                UI.renderProfile();
+                break;
+            case 'settings':
+                UI.renderSettings();
+                break;
+            case 'admin':
+                UI.renderAdmin();
+                break;
+            default:
+                UI.renderHome();
+        }
+    },
+
+    // Audio Playback Controls
+    playTrack(track) {
+        if (!track || !track.stream_url) {
+            UI.showToast('Invalid audio stream for this track', 'error');
+            return;
+        }
+
+        State.set('currentTrack', track);
+        this.audio.src = track.stream_url;
+        this.audio.play().then(() => {
+            State.set('isPlaying', true);
+            UI.showToast(`Playing: ${track.title}`, 'music');
+        }).catch(err => {
+            console.error('Autoplay prevented or stream error:', err);
+            UI.showToast('Click play on player to start listening', 'info');
+        });
+    },
+
+    togglePlay() {
+        if (!State.get('currentTrack')) {
+            UI.showToast('Select a track to start playing', 'info');
+            return;
+        }
+
+        if (this.audio.paused) {
+            this.audio.play();
+        } else {
+            this.audio.pause();
+        }
+    },
+
+    prevTrack() {
+        const queue = State.get('queue');
+        let idx = State.get('queueIndex') - 1;
+        if (idx >= 0 && queue[idx]) {
+            State.set('queueIndex', idx);
+            this.playTrack(queue[idx]);
+        } else if (this.audio.currentTime > 3) {
+            this.audio.currentTime = 0;
+        }
+    },
+
+    nextTrack() {
+        const queue = State.get('queue');
+        let idx = State.get('queueIndex') + 1;
+        if (idx < queue.length && queue[idx]) {
+            State.set('queueIndex', idx);
+            this.playTrack(queue[idx]);
+        }
+    },
+
+    toggleShuffle() {
+        const current = State.get('shuffle');
+        State.set('shuffle', !current);
+        UI.showToast(`Shuffle ${!current ? 'Enabled' : 'Disabled'}`);
+    },
+
+    toggleRepeat() {
+        const current = State.get('repeatMode');
+        const modes = ['off', 'all', 'one'];
+        const next = modes[(modes.indexOf(current) + 1) % modes.length];
+        State.set('repeatMode', next);
+        UI.showToast(`Repeat mode: ${next.toUpperCase()}`);
+    },
+
+    async toggleCurrentFavourite() {
+        const track = State.get('currentTrack');
+        if (!track) return;
+        const user = State.get('user');
+        if (!user) {
+            this.openAuthModal('login');
+            return;
+        }
+        try {
+            const res = await API.toggleFavourite(track.id);
+            const btn = document.getElementById('player-like-btn');
+            if (btn) btn.classList.toggle('liked', res.is_favourite);
+            UI.showToast(res.is_favourite ? 'Added to Favourites' : 'Removed from Favourites', 'success');
+        } catch (e) {
+            UI.showToast(e.message, 'error');
+        }
+    },
+
+    browseGenre(genre) {
+        this.navigateTo('search', genre);
+    },
+
+    // Modal Operations
+    openAuthModal(mode = 'login') {
+        const overlay = document.getElementById('auth-modal-overlay');
+        const title = document.getElementById('auth-modal-title');
+        const submitBtn = document.getElementById('auth-modal-submit');
+        const switchText = document.getElementById('auth-modal-switch');
+        const nameField = document.getElementById('auth-name-group');
+
+        if (!overlay) return;
+        overlay.classList.add('active');
+
+        if (mode === 'login') {
+            title.textContent = 'Sign In to MusicWave';
+            submitBtn.textContent = 'Sign In';
+            nameField.style.display = 'none';
+            switchText.innerHTML = `Don't have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('register')" style="color:var(--primary); font-weight:600;">Create One</a>`;
+            overlay.dataset.mode = 'login';
+        } else {
+            title.textContent = 'Create MusicWave Account';
+            submitBtn.textContent = 'Create Account';
+            nameField.style.display = 'block';
+            switchText.innerHTML = `Already have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('login')" style="color:var(--primary); font-weight:600;">Sign In</a>`;
+            overlay.dataset.mode = 'register';
+        }
+    },
+
+    closeAuthModal() {
+        const overlay = document.getElementById('auth-modal-overlay');
+        if (overlay) overlay.classList.remove('active');
+    },
+
+    async handleAuthSubmit(e) {
+        e.preventDefault();
+        const overlay = document.getElementById('auth-modal-overlay');
+        const mode = overlay.dataset.mode;
+        const email = document.getElementById('auth-email-input').value.trim();
+        const pwd = document.getElementById('auth-password-input').value;
+        const username = document.getElementById('auth-username-input').value.trim();
+
+        try {
+            let res;
+            if (mode === 'login') {
+                res = await API.login(email, pwd);
+            } else {
+                res = await API.register(username, email, pwd, username);
+            }
+            State.set('user', res.user);
+            this.updateUserUI(res.user);
+            this.closeAuthModal();
+            UI.showToast(`Welcome ${res.user.display_name || res.user.username}!`, 'success');
+        } catch (err) {
+            UI.showToast(err.message, 'error');
+        }
+    },
+
+    async logout() {
+        await API.logout();
+        State.set('user', null);
+        this.updateUserUI(null);
+        this.navigateTo('home');
+        UI.showToast('You have been logged out.', 'info');
+    },
+
+    openCreateJamModal() {
+        const user = State.get('user');
+        if (!user) {
+            this.openAuthModal('login');
+            return;
+        }
+        const name = prompt('Enter a name for your Music Jam room:');
+        if (!name) return;
+        API.createJam(name, 'A real-time music jam room').then(res => {
+            UI.showToast(`Jam room "${name}" created!`, 'success');
+            this.navigateTo('jams');
+        }).catch(err => UI.showToast(err.message, 'error'));
+    },
+
+    openCreatePlaylistModal() {
+        const name = prompt('Enter a title for your new playlist:');
+        if (!name) return;
+        API.createPlaylist(name, '').then(res => {
+            UI.showToast(`Playlist "${name}" created!`, 'success');
+            this.navigateTo('library');
+        }).catch(err => UI.showToast(err.message, 'error'));
+    }
+};
+
+window.App = App;
+
+// Bootstrap on DOM Loaded
+document.addEventListener('DOMContentLoaded', () => {
+    App.init();
+});

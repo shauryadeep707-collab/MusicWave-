@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MusicWave – Offline</title>
+    <style>
+        body {
+            background-color: #0a0a10;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            text-align: center;
+            padding: 24px;
+        }
+        .container {
+            background: #12121c;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 36px;
+            max-width: 440px;
+        }
+        h1 { font-size: 1.5rem; margin-bottom: 12px; }
+        p { color: #a1a1b5; font-size: 0.92rem; line-height: 1.5; margin-bottom: 24px; }
+        .btn {
+            background: #8b5cf6;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 9999px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>You are currently offline</h1>
+        <p>No internet connection was detected. You can still access your previously downloaded tracks and offline playlists.</p>
+        <button class="btn" onclick="window.location.href='/downloads'">Open Offline Downloads</button>
+    </div>
+</body>
+</html>
