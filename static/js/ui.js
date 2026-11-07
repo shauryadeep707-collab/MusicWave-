@@ -297,35 +297,35 @@ const UI = {
                     const lofiJSON = lofi ? JSON.stringify(lofi).replace(/"/g, '&quot;') : null;
 
                     dualContainer.innerHTML = `
-                        <div class="dual-version-card" style="box-sizing: border-box; width: 100%; max-width: 100%; overflow: hidden;">
-                            <div class="dual-version-header" style="box-sizing: border-box; width: 100%; max-width: 100%;">
-                                <div style="font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
-                                    <span>🔀 Song Versions for "${query}"</span>
+                        <div class="dual-version-card" style="box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden;">
+                            <div class="dual-version-header" style="box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px;">
+                                <div style="font-weight: 700; font-size: 1.02rem; display: flex; align-items: center; gap: 8px; min-width: 0;">
+                                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🔀 Song Versions for "${query}"</span>
                                 </div>
                                 <span style="font-size: 0.8rem; color: var(--text-secondary);">Official studio release vs chill relaxing Lo-Fi version</span>
                             </div>
-                            <div class="dual-version-grid" style="box-sizing: border-box; width: 100%; max-width: 100%;">
+                            <div class="dual-version-grid" style="box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0;">
                                 ${official ? `
-                                    <div class="version-box" style="box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 14px;" onclick="App.playTrack(${offJSON})">
-                                        <img src="${official.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" style="flex-shrink: 0; width: 64px; height: 64px; object-fit: cover; border-radius: 8px;" alt="Official"/>
+                                    <div class="version-box" style="box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 12px 14px;" onclick="App.playTrack(${offJSON})">
+                                        <img src="${official.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" style="flex-shrink: 0; width: 56px; height: 56px; object-fit: cover; border-radius: 8px;" alt="Official"/>
                                         <div class="version-box-info" style="flex: 1 1 0%; min-width: 0; width: 0; overflow: hidden;">
                                             <span class="badge" style="background: rgba(139, 92, 246, 0.25); color: var(--primary); font-size: 0.72rem; padding: 2px 8px; display: inline-block;">👑 Official Studio Version</span>
-                                            <div style="font-weight: 700; font-size: 0.95rem; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${official.title}">${official.title}</div>
-                                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${official.artist_name}">${official.artist_name}</div>
+                                            <div style="font-weight: 700; font-size: 0.92rem; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${official.title}">${official.title}</div>
+                                            <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${official.artist_name}">${official.artist_name}</div>
                                         </div>
-                                        <button class="btn-primary version-box-btn" style="flex-shrink: 0; white-space: nowrap; padding: 8px 18px; font-size: 0.82rem;" onclick="event.stopPropagation(); App.playTrack(${offJSON})">▶ Play Official</button>
+                                        <button class="btn-primary version-box-btn" style="flex-shrink: 0; white-space: nowrap; padding: 7px 16px; font-size: 0.82rem;" onclick="event.stopPropagation(); App.playTrack(${offJSON})">▶ Play Official</button>
                                     </div>
                                 ` : ''}
 
                                 ${lofi ? `
-                                    <div class="version-box" style="box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 14px;" onclick="App.playTrack(${lofiJSON})">
-                                        <img src="${lofi.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" style="flex-shrink: 0; width: 64px; height: 64px; object-fit: cover; border-radius: 8px;" alt="Lo-Fi"/>
+                                    <div class="version-box" style="box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 12px 14px;" onclick="App.playTrack(${lofiJSON})">
+                                        <img src="${lofi.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" style="flex-shrink: 0; width: 56px; height: 56px; object-fit: cover; border-radius: 8px;" alt="Lo-Fi"/>
                                         <div class="version-box-info" style="flex: 1 1 0%; min-width: 0; width: 0; overflow: hidden;">
                                             <span class="badge" style="background: rgba(245, 158, 11, 0.25); color: var(--accent-amber); font-size: 0.72rem; padding: 2px 8px; display: inline-block;">☕ Lo-Fi Chill Version</span>
-                                            <div style="font-weight: 700; font-size: 0.95rem; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${lofi.title}">${lofi.title}</div>
-                                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${lofi.artist_name}">${lofi.artist_name}</div>
+                                            <div style="font-weight: 700; font-size: 0.92rem; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${lofi.title}">${lofi.title}</div>
+                                            <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${lofi.artist_name}">${lofi.artist_name}</div>
                                         </div>
-                                        <button class="btn-primary version-box-btn" style="background: var(--accent-amber); color: #12121c; flex-shrink: 0; white-space: nowrap; padding: 8px 18px; font-size: 0.82rem;" onclick="event.stopPropagation(); App.playTrack(${lofiJSON})">▶ Play Lo-Fi</button>
+                                        <button class="btn-primary version-box-btn" style="background: var(--accent-amber); color: #12121c; flex-shrink: 0; white-space: nowrap; padding: 7px 16px; font-size: 0.82rem;" onclick="event.stopPropagation(); App.playTrack(${lofiJSON})">▶ Play Lo-Fi</button>
                                     </div>
                                 ` : ''}
                             </div>

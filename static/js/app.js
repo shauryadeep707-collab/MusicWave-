@@ -1229,6 +1229,12 @@ const App = {
 
             UI.showToast('Setting up your Jam room...', 'info');
             const res = await API.createJam(name, description || 'Synchronized music listening party');
+            if (res.user_id) {
+                localStorage.setItem('musicwave_user_id', res.user_id);
+                if (!State.get('user')) {
+                    State.set('user', { id: res.user_id, username: `Guest_${res.user_id}`, role: 'user' });
+                }
+            }
             this.closeCreateJamModal();
             UI.showToast(`🎉 Jam room "${name}" created! 4-Digit Code: ${res.room.join_code}`, 'success');
             await this.enterJamRoom(res.room.id);

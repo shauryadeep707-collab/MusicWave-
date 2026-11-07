@@ -23,7 +23,8 @@ def parse_expiry(exp_val) -> Optional[datetime]:
             return datetime.strptime(exp_val[:19], '%Y-%m-%d %H:%M:%S')
     return None
 
-@jams_bp.route('/', methods=['GET'])
+@jams_bp.route('', methods=['GET'], strict_slashes=False)
+@jams_bp.route('/', methods=['GET'], strict_slashes=False)
 def list_public_jams():
     """List currently active public Jam rooms with live participant counts."""
     rooms = query_db("""
@@ -39,7 +40,8 @@ def list_public_jams():
     """)
     return jsonify({'jams': rooms}), 200
 
-@jams_bp.route('/', methods=['POST'])
+@jams_bp.route('', methods=['POST'], strict_slashes=False)
+@jams_bp.route('/', methods=['POST'], strict_slashes=False)
 def create_jam():
     """Create a new Jam room with a 4-digit join code valid for 10 minutes."""
     user_id = get_auth_user_id(auto_create_guest=True)
@@ -60,8 +62,8 @@ def create_jam():
     code_expires_at = datetime.utcnow() + timedelta(minutes=10)
 
     execute_db("""
-        INSERT INTO jam_rooms (id, name, description, host_id, is_public, max_participants, join_code, code_expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO jam_rooms (id, name, description, host_id, is_public, max_participants, join_code, code_expires_at, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)
     """, (room_id, name, description, user_id, is_public, max_participants, join_code, code_expires_at))
 
     is_pg = is_postgres()
@@ -89,13 +91,14 @@ def create_jam():
             'remaining_seconds': 600,
             'is_public': bool(is_public),
             'host_id': user_id
-        }
+        },
+        'user_id': user_id
     }), 201
 
-@jams_bp.route('/<room_id>', methods=['GET'])
+@jams_bp.route('/<room_id>', methods=['GET'], strict_slashes=False)
 def get_jam_room(room_id):
     """Retrieve Jam room details, code expiration countdown, current track, and participants."""
-    user_id = get_auth_user_id()
+    user_id = get_auth_user_id(auto_create_guest=True)
     room = query_db("""
         SELECT r.*, u.username as host_name, p.avatar_url as host_avatar
         FROM jam_rooms r
@@ -152,7 +155,7 @@ def get_jam_room(room_id):
         'queue': queue
     }), 200
 
-@jams_bp.route('/join', methods=['POST'])
+@jams_bp.route('/join', methods=['POST'], strict_slashes=False)
 def join_jam():
     """
     Join a Jam room using either:
@@ -213,7 +216,7 @@ def join_jam():
         'is_host': is_host
     }), 200
 
-@jams_bp.route('/<room_id>/regenerate-code', methods=['POST'])
+@jams_bp.route('/<room_id>/regenerate-code', methods=['POST'], strict_slashes=False)
 def regenerate_join_code(room_id):
     """
     Jam Host action: Generate a fresh 4-digit code and reset the 10-minute expiry timer.
@@ -246,10 +249,10 @@ def regenerate_join_code(room_id):
         'remaining_seconds': 600
     }), 200
 
-@jams_bp.route('/<room_id>/sync', methods=['POST'])
+@jams_bp.route('/<room_id>/sync', methods=['POST'], strict_slashes=False)
 def sync_playback(room_id):
     """Host action: Sync currently playing track & playback position to all listeners."""
-    user_id = get_auth_user_id()
+    user_id = get_auth_user_id(auto_create_guest=True)
     room = query_db("SELECT * FROM jam_rooms WHERE id = ?", (room_id,), one=True)
     if not room:
         return jsonify({'error': 'Room not found'}), 404
@@ -270,7 +273,7 @@ def sync_playback(room_id):
 
     return jsonify({'status': 'synced'}), 200
 
-@jams_bp.route('/<room_id>/leave', methods=['POST'])
+@jams_bp.route('/<room_id>/leave', methods=['POST'], strict_slashes=False)
 def leave_jam(room_id):
     """
     Leave the Jam room.
@@ -281,7 +284,7 @@ def leave_jam(room_id):
         execute_db("DELETE FROM jam_participants WHERE room_id = ? AND user_id = ?", (room_id, user_id))
     return jsonify({'status': 'left'}), 200
 
-@jams_bp.route('/<room_id>/end', methods=['POST'])
+@jams_bp.route('/<room_id>/end', methods=['POST'], strict_slashes=False)
 def end_jam(room_id):
     """
     Owner/Host action: Permanently end and close the Jam room.

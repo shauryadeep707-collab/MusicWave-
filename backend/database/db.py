@@ -472,7 +472,7 @@ def create_guest_user():
         pwd_hash = generate_password_hash("guest_pass", method="pbkdf2:sha256")
 
         user_id, _ = execute_db(
-            "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'guest')",
+            "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
             (guest_username, guest_email, pwd_hash)
         )
         if user_id:
@@ -485,7 +485,7 @@ def create_guest_user():
             if has_request_context():
                 session['user_id'] = user_id
                 session['username'] = guest_username
-                session['role'] = 'guest'
+                session['role'] = 'user'
                 session.permanent = True
             return user_id
         return None
