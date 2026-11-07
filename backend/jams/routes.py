@@ -265,14 +265,35 @@ def sync_playback(room_id):
         return jsonify({'error': 'Room not found'}), 404
 
     data = request.get_json() or {}
-    user_id = get_auth_user_id() or data.get('user_id') or data.get('host_id') or get_auth_user_id(auto_create_guest=True)
+    user_id = get_auth_user_id() or data.get('user_id') or data.get('host_id')
+    if not user_id:
+        user_id = room['host_id']
 
     if user_id and int(room['host_id']) != int(user_id):
         return jsonify({'error': 'Only host can broadcast playback state'}), 403
 
     track_id = data.get('track_id')
+    track_data = data.get('track')
     status = data.get('playback_status', 'playing')
     pos = float(data.get('playback_position', 0.0))
+
+    from backend.providers import music_service
+    persisted_track = None
+
+    # Auto-persist track if provided to guarantee it exists in database for all listeners
+    if track_data:
+        try:
+            persisted_list = music_service._persist_tracks([track_data])
+            if persisted_list:
+                persisted_track = persisted_list[0]
+                track_id = persisted_track.get('id')
+        except Exception as pe:
+            print(f"[Jam Sync Persist Notice]: {pe}")
+
+    if not persisted_track and track_id:
+        persisted_track = query_db("SELECT * FROM tracks WHERE id = ?", (track_id,), one=True)
+
+    final_track = persisted_track or track_data
 
     execute_db("""
         UPDATE jam_rooms
@@ -280,23 +301,26 @@ def sync_playback(room_id):
         WHERE id = ?
     """, (track_id, status, pos, room_id))
 
-    # Also broadcast to WebSocket clients in this room
+    # Dual-channel broadcast: send to all WebSocket clients in this room
     try:
         from backend import socketio
-        track = None
-        if track_id:
-            track = query_db("SELECT * FROM tracks WHERE id = ?", (track_id,), one=True)
-        if track:
+        if final_track:
             socketio.emit('jam_track_changed', {
                 'room_id': room_id,
-                'track': track,
+                'track': final_track,
                 'position': pos,
                 'status': status
             }, to=room_id)
     except Exception as se:
         print(f"[Socket broadcast error in sync]: {se}")
 
-    return jsonify({'status': 'synced', 'room_id': room_id, 'track_id': track_id, 'playback_status': status}), 200
+    return jsonify({
+        'status': 'synced',
+        'room_id': room_id,
+        'track_id': track_id,
+        'track': final_track,
+        'playback_status': status
+    }), 200
 
 @jams_bp.route('/<room_id>/leave', methods=['POST'], strict_slashes=False)
 def leave_jam(room_id):

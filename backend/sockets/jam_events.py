@@ -82,6 +82,16 @@ def register_socket_events(socketio):
             return
 
         track_id = track.get('id')
+        from backend.providers import music_service
+        if not track_id:
+            try:
+                persisted = music_service._persist_tracks([track])
+                if persisted:
+                    track = persisted[0]
+                    track_id = track.get('id')
+            except Exception as e:
+                print(f"[Socket track persist notice]: {e}")
+
         try:
             execute_db("""
                 UPDATE jam_rooms

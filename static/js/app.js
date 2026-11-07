@@ -33,6 +33,9 @@ const App = {
         // Check current session
         await this.checkAuth();
 
+        // Restore active Jam room session if user is hosting or participating
+        await this.restoreActiveJamSession();
+
         // Initial Routing based on path
         this.handleInitialRoute();
     },
@@ -65,9 +68,16 @@ const App = {
 
         // 1. Host started or changed track
         this.socket.on('jam_track_changed', (data) => {
-            const activeJam = State.get('activeJamRoom');
-            if (!activeJam || activeJam.id !== data.room_id) return;
-            const isHost = State.get('isJamHost');
+            let activeJam = State.get('activeJamRoom');
+            if (!activeJam) {
+                const savedId = localStorage.getItem('musicwave_active_jam_id');
+                if (savedId) {
+                    activeJam = { id: savedId };
+                    State.set('activeJamRoom', activeJam);
+                }
+            }
+            if (!activeJam || String(activeJam.id) !== String(data.room_id)) return;
+            const isHost = State.get('isJamHost') || localStorage.getItem('musicwave_is_jam_host') === '1';
             if (isHost) return; // Host triggered this
 
             UI.showToast(`🎧 Jam Host started: ${data.track.title}`, 'music');
@@ -76,9 +86,16 @@ const App = {
 
         // 2. Host paused, resumed, or scrubbed/seeked playback
         this.socket.on('jam_playback_synced', (data) => {
-            const activeJam = State.get('activeJamRoom');
-            if (!activeJam || activeJam.id !== data.room_id) return;
-            const isHost = State.get('isJamHost');
+            let activeJam = State.get('activeJamRoom');
+            if (!activeJam) {
+                const savedId = localStorage.getItem('musicwave_active_jam_id');
+                if (savedId) {
+                    activeJam = { id: savedId };
+                    State.set('activeJamRoom', activeJam);
+                }
+            }
+            if (!activeJam || String(activeJam.id) !== String(data.room_id)) return;
+            const isHost = State.get('isJamHost') || localStorage.getItem('musicwave_is_jam_host') === '1';
             if (isHost) return;
 
             if (data.action === 'pause') {
@@ -98,11 +115,18 @@ const App = {
 
         // 3. Initial sync state when listener joins an ongoing jam
         this.socket.on('jam_sync_state', (data) => {
-            const activeJam = State.get('activeJamRoom');
-            if (!activeJam || activeJam.id !== data.room_id) return;
+            let activeJam = State.get('activeJamRoom');
+            if (!activeJam) {
+                const savedId = localStorage.getItem('musicwave_active_jam_id');
+                if (savedId) {
+                    activeJam = { id: savedId };
+                    State.set('activeJamRoom', activeJam);
+                }
+            }
+            if (!activeJam || String(activeJam.id) !== String(data.room_id)) return;
 
             if (data.track) {
-                const isHost = State.get('isJamHost');
+                const isHost = State.get('isJamHost') || localStorage.getItem('musicwave_is_jam_host') === '1';
                 if (!isHost) {
                     UI.showToast(`🎧 Live Jam Audio Synchronized: ${data.track.title}`, 'music');
                     if (data.status === 'playing') {
@@ -358,6 +382,25 @@ const App = {
             const btn = document.getElementById('player-shuffle-btn');
             if (btn) btn.classList.toggle('active', shuffle);
         });
+
+        // Jam room active badge
+        const updateJamBadge = () => {
+            const badge = document.getElementById('player-jam-live-badge');
+            if (!badge) return;
+            const activeJam = State.get('activeJamRoom');
+            const isHost = State.get('isJamHost') || localStorage.getItem('musicwave_is_jam_host') === '1';
+            if (activeJam && isHost) {
+                badge.style.display = 'inline-flex';
+                badge.innerHTML = `🔴 Live to Jam: ${activeJam.name || 'Room'}`;
+            } else if (activeJam) {
+                badge.style.display = 'inline-flex';
+                badge.innerHTML = `🎧 In Jam: ${activeJam.name || 'Room'}`;
+            } else {
+                badge.style.display = 'none';
+            }
+        };
+        State.subscribe('activeJamRoom', updateJamBadge);
+        State.subscribe('isJamHost', updateJamBadge);
     },
 
     setupDOMListeners() {
@@ -441,9 +484,18 @@ const App = {
                 }
 
                 // If host of active Jam, broadcast scrubbed position to all listeners via socket & HTTP sync
-                const activeJam = State.get('activeJamRoom');
-                const isHost = State.get('isJamHost');
-                if (activeJam && isHost) {
+                let activeJam = State.get('activeJamRoom');
+                const savedJamId = localStorage.getItem('musicwave_active_jam_id');
+                const isSavedHost = localStorage.getItem('musicwave_is_jam_host') === '1';
+
+                if (!activeJam && savedJamId) {
+                    activeJam = { id: savedJamId };
+                    State.set('activeJamRoom', activeJam);
+                    if (isSavedHost) State.set('isJamHost', true);
+                }
+
+                const isHost = Boolean(State.get('isJamHost') || isSavedHost);
+                if (activeJam && activeJam.id && isHost) {
                     if (this.socket) {
                         this.socket.emit('jam_playback_control', {
                             room_id: activeJam.id,
@@ -455,6 +507,7 @@ const App = {
                         method: 'POST',
                         body: {
                             track_id: track?.id,
+                            track: track,
                             playback_status: State.get('isPlaying') ? 'playing' : 'paused',
                             playback_position: targetSec
                         }
@@ -600,25 +653,44 @@ const App = {
 
         // Real-Time Music Jam Broadcast:
         // If current user is the host of an active Jam room, broadcast the song in real time to all listeners
-        const activeJam = State.get('activeJamRoom');
-        const isHost = State.get('isJamHost');
-        if (activeJam && isHost && !options?.fromJam) {
+        let activeJam = State.get('activeJamRoom');
+        const savedJamId = localStorage.getItem('musicwave_active_jam_id');
+        const isSavedHost = localStorage.getItem('musicwave_is_jam_host') === '1';
+
+        if (!activeJam && savedJamId) {
+            activeJam = { id: savedJamId };
+            State.set('activeJamRoom', activeJam);
+            if (isSavedHost) State.set('isJamHost', true);
+        }
+
+        const user = State.get('user') || { id: Number(localStorage.getItem('musicwave_user_id')) };
+        const isHost = Boolean(State.get('isJamHost') || isSavedHost || (activeJam && user && (activeJam.host_id === user.id || String(activeJam.host_id) === String(user.id))));
+
+        if (activeJam && activeJam.id && isHost && !options?.fromJam) {
+            console.log(`[Jam Host Broadcast] Live broadcasting track "${track.title}" to room ${activeJam.id}`);
+            UI.showToast(`📡 Jam Host: Playing "${track.title}" for all listeners!`, 'music');
+
             if (this.socket) {
+                if (!this.socket.connected) {
+                    this.socket.connect();
+                }
                 this.socket.emit('jam_play_track', {
                     room_id: activeJam.id,
                     track: track,
                     position: 0.0
                 });
             }
-            // Dual-channel reliability: also update backend room state via HTTP
+            // Dual-channel reliability: also update backend room state via HTTP with full track payload
             API.request(`/api/jams/${activeJam.id}/sync`, {
                 method: 'POST',
                 body: {
                     track_id: track.id,
+                    track: track,
                     playback_status: 'playing',
-                    playback_position: 0.0
+                    playback_position: 0.0,
+                    host_id: user?.id
                 }
-            }).catch(() => {});
+            }).catch(err => console.warn('[Jam Sync HTTP error]:', err));
         }
 
         // Train recommendation transition matrix: previousTrack -> currentTrack
@@ -676,6 +748,9 @@ const App = {
                         if (track.id) API.recordPlay(track.id).catch(() => {});
                     } catch (ytErr) {
                         console.warn("YouTube play attempt error, retrying:", ytErr);
+                        if (options?.fromJam) {
+                            this.showJamTuneInBanner(track);
+                        }
                     }
                 }
             };
@@ -711,11 +786,16 @@ const App = {
         }
         this.audio.play().then(() => {
             State.set('isPlaying', true);
-            UI.showToast(`Playing: ${track.title}`, 'music');
+            this.hideJamTuneInBanner();
+            UI.showToast(options?.fromJam ? `🎧 In Sync: ${track.title}` : `Playing: ${track.title}`, 'music');
             if (track.id) API.recordPlay(track.id).catch(() => {});
         }).catch(err => {
             console.error('Playback prevented or stream error:', err);
-            UI.showToast('Click play on player to start listening', 'info');
+            if (options?.fromJam) {
+                this.showJamTuneInBanner(track);
+            } else {
+                UI.showToast('Click play on player to start listening', 'info');
+            }
         });
 
         // Smart AI background pre-fetch: cache next single song for instant 0ms Next transition
@@ -754,9 +834,18 @@ const App = {
         }
 
         // Real-time broadcast if Jam host
-        const activeJam = State.get('activeJamRoom');
-        const isHost = State.get('isJamHost');
-        if (activeJam && isHost) {
+        let activeJam = State.get('activeJamRoom');
+        const savedJamId = localStorage.getItem('musicwave_active_jam_id');
+        const isSavedHost = localStorage.getItem('musicwave_is_jam_host') === '1';
+
+        if (!activeJam && savedJamId) {
+            activeJam = { id: savedJamId };
+            State.set('activeJamRoom', activeJam);
+            if (isSavedHost) State.set('isJamHost', true);
+        }
+
+        const isHost = Boolean(State.get('isJamHost') || isSavedHost);
+        if (activeJam && activeJam.id && isHost) {
             const currentPos = State.get('currentTime') || 0;
             if (this.socket) {
                 this.socket.emit('jam_playback_control', {
@@ -768,7 +857,8 @@ const App = {
             API.request(`/api/jams/${activeJam.id}/sync`, {
                 method: 'POST',
                 body: {
-                    track_id: track.id,
+                    track_id: track?.id,
+                    track: track,
                     playback_status: willPlay ? 'playing' : 'paused',
                     playback_position: currentPos
                 }
@@ -1273,16 +1363,51 @@ const App = {
         }
     },
 
+    async restoreActiveJamSession() {
+        const savedJamId = localStorage.getItem('musicwave_active_jam_id');
+        if (!savedJamId) return;
+
+        try {
+            const data = await API.getJamRoom(savedJamId);
+            if (data && data.room && data.room.is_active) {
+                State.set('activeJamRoom', data.room);
+                State.set('isJamHost', data.is_host);
+                State.set('jamCurrentTrack', data.current_track);
+                localStorage.setItem('musicwave_is_jam_host', data.is_host ? '1' : '0');
+
+                if (this.socket) {
+                    if (!this.socket.connected) this.socket.connect();
+                    this.socket.emit('join_jam', {
+                        room_id: data.room.id,
+                        user: State.get('user')
+                    });
+                }
+                if (!data.is_host) {
+                    this.startJamSyncPoller(data.room.id);
+                }
+                console.log(`[Jam Persistence] Restored active Jam session: ${savedJamId} (is_host=${data.is_host})`);
+            } else {
+                localStorage.removeItem('musicwave_active_jam_id');
+                localStorage.removeItem('musicwave_is_jam_host');
+            }
+        } catch (e) {
+            console.warn('[Jam Session Restore notice]:', e);
+        }
+    },
+
     async enterJamRoom(roomId) {
         try {
             const data = await API.getJamRoom(roomId);
             State.set('activeJamRoom', data.room);
             State.set('isJamHost', data.is_host);
             State.set('jamCurrentTrack', data.current_track);
+            localStorage.setItem('musicwave_active_jam_id', data.room.id);
+            localStorage.setItem('musicwave_is_jam_host', data.is_host ? '1' : '0');
             UI.renderJamRoom(data);
 
             // Connect to real-time socket room
             if (this.socket) {
+                if (!this.socket.connected) this.socket.connect();
                 this.socket.emit('join_jam', {
                     room_id: roomId,
                     user: State.get('user')
@@ -1522,8 +1647,17 @@ const App = {
     },
 
     async leaveCurrentJam(roomId, isHost = false) {
+        if (isHost) {
+            // Host is stepping out to browse/search catalog to play tracks for all listeners
+            UI.showToast('📡 Stepped out to catalog. Any song you play normally will broadcast to your Jam room!', 'music');
+            this.navigateTo('home');
+            return;
+        }
+
         this.stopJamSyncPoller();
         this.hideJamTuneInBanner();
+        localStorage.removeItem('musicwave_active_jam_id');
+        localStorage.removeItem('musicwave_is_jam_host');
         if (this.jamTimer) {
             clearInterval(this.jamTimer);
             this.jamTimer = null;
@@ -1538,22 +1672,20 @@ const App = {
         State.set('activeJamRoom', null);
         State.set('isJamHost', false);
         State.set('jamCurrentTrack', null);
-        if (isHost) {
-            UI.showToast('Stepped out. Your Jam room remains active until you choose to end it.', 'info');
-        } else {
-            UI.showToast('Left Jam party.', 'info');
-        }
+        UI.showToast('Left Jam party.', 'info');
         this.navigateTo('jams');
     },
 
     async endCurrentJam(roomId, roomName = 'this Jam room') {
-        const confirmed = confirm(`Are you sure you want to END "${roomName}"?\n\nThis will permanently close the Jam room for all listeners.\n\nNote: your Jam room stays active forever until you confirm here.`);
+        const confirmed = confirm(`Are you sure you want to END "${roomName}"?\n\nThis will permanently close the Jam room for all listeners.`);
         if (!confirmed) return;
 
         try {
             UI.showToast('Ending Jam room...', 'info');
             this.stopJamSyncPoller();
             this.hideJamTuneInBanner();
+            localStorage.removeItem('musicwave_active_jam_id');
+            localStorage.removeItem('musicwave_is_jam_host');
             if (this.jamTimer) {
                 clearInterval(this.jamTimer);
                 this.jamTimer = null;
