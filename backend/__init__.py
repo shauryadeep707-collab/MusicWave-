@@ -60,6 +60,13 @@ def create_app(config_class=Config):
     def internal_error(e):
         return jsonify({'error': 'Server encountered an error processing your request. Please try again.'}), 500
 
+    @app.errorhandler(404)
+    def not_found(e):
+        from flask import request
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'API endpoint not found'}), 404
+        return render_template('index.html'), 200
+
     # Health Check API
     @app.route('/api/health')
     def health_check():

@@ -99,12 +99,19 @@ class MusicService:
 
         return persisted
 
-    def _async_persist(self, tracks: List[UnifiedTrack]):
-        """Persist tracks in background without blocking API response."""
-        try:
-            self._persist_tracks(tracks)
-        except Exception as e:
-            print(f"[Async Persistence Background Notice]: {e}")
+    def _async_persist(self, tracks: List[UnifiedTrack], app=None):
+        """Persist tracks in background without blocking API response, ensuring database connections are returned to pool."""
+        if app:
+            with app.app_context():
+                try:
+                    self._persist_tracks(tracks)
+                except Exception as e:
+                    print(f"[Async Persistence Background Notice]: {e}")
+        else:
+            try:
+                self._persist_tracks(tracks)
+            except Exception as e:
+                print(f"[Async Persistence Background Notice]: {e}")
 
     def import_youtube(self, url_or_id: str) -> Optional[Dict[str, Any]]:
         """Directly import any YouTube song by link or ID."""
@@ -190,9 +197,15 @@ class MusicService:
 
         # Persist newly discovered tracks in background thread without delaying user
         if provider_tracks:
+            try:
+                from flask import current_app
+                app_ref = current_app._get_current_object()
+            except Exception:
+                app_ref = None
+
             threading.Thread(
                 target=self._async_persist,
-                args=(provider_tracks,),
+                args=(provider_tracks, app_ref),
                 daemon=True
             ).start()
 

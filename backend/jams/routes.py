@@ -50,6 +50,10 @@ def create_jam():
     """Create a new Jam room with a 4-digit join code valid for 10 minutes."""
     user_id = get_auth_user_id(auto_create_guest=True)
     if not user_id:
+        from backend.database.db import create_guest_user
+        user_id = create_guest_user()
+
+    if not user_id:
         return jsonify({'error': 'Could not initialize session to create Jam room. Please try again.'}), 500
 
     data = request.get_json() or {}

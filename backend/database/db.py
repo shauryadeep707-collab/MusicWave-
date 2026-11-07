@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import re
+import threading
 from pathlib import Path
 from flask import g, current_app
 from werkzeug.security import generate_password_hash
@@ -9,9 +10,37 @@ from werkzeug.security import generate_password_hash
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
+    from psycopg2.pool import ThreadedConnectionPool
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     PSYCOPG2_AVAILABLE = False
+
+_pg_pool = None
+_pool_lock = threading.Lock()
+
+def get_pg_pool():
+    """Thread-safe lazy initialization of PostgreSQL connection pool (max 8 connections)."""
+    global _pg_pool
+    if _pg_pool is None:
+        with _pool_lock:
+            if _pg_pool is None and PSYCOPG2_AVAILABLE:
+                try:
+                    from flask import current_app, has_app_context
+                    if has_app_context():
+                        db_url = current_app.config.get('DATABASE_URL', '')
+                    else:
+                        from config import Config
+                        db_url = getattr(Config, 'DATABASE_URL', '')
+
+                    if db_url and (db_url.startswith('postgresql://') or db_url.startswith('postgres://')):
+                        if db_url.startswith('postgres://'):
+                            db_url = db_url.replace('postgres://', 'postgresql://', 1)
+                        # Bounded connection pool to respect Supabase connection limits and reuse TLS sockets
+                        _pg_pool = ThreadedConnectionPool(minconn=1, maxconn=8, dsn=db_url, connect_timeout=6)
+                except Exception as e:
+                    print(f"[PostgreSQL Connection Pool Init Notice]: {e}")
+                    _pg_pool = None
+    return _pg_pool
 
 def is_postgres():
     try:
@@ -38,83 +67,130 @@ def get_db():
     if not has_app_context():
         # Fallback for worker threads or CLI scripts
         if is_postgres():
-            from config import Config
-            db_url = Config.DATABASE_URL
-            if db_url.startswith('postgres://'):
-                db_url = db_url.replace('postgres://', 'postgresql://', 1)
-            try:
-                return psycopg2.connect(db_url, connect_timeout=5)
-            except Exception:
-                from config import Config
-                db_path = Config.DATABASE_PATH
-                os.makedirs(os.path.dirname(db_path), exist_ok=True)
-                conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-                conn.row_factory = sqlite3.Row
-                conn.execute("PRAGMA foreign_keys = ON;")
-                return conn
-        else:
-            from config import Config
-            db_path = Config.DATABASE_PATH
-            os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON;")
-            return conn
+            pool = get_pg_pool()
+            if pool:
+                try:
+                    conn = pool.getconn()
+                    if conn and not conn.closed:
+                        return conn
+                except Exception:
+                    pass
+        from config import Config
+        db_path = Config.DATABASE_PATH
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return conn
 
     if 'db' not in g:
         if is_postgres():
-            try:
-                if not PSYCOPG2_AVAILABLE:
-                    raise RuntimeError("psycopg2-binary is required for PostgreSQL/Supabase connections.")
-                db_url = current_app.config.get('DATABASE_URL', '')
-                if db_url.startswith('postgres://'):
-                    db_url = db_url.replace('postgres://', 'postgresql://', 1)
-                g.db = psycopg2.connect(db_url, connect_timeout=5)
+            pool = get_pg_pool()
+            conn = None
+            if pool:
+                try:
+                    conn = pool.getconn()
+                    if conn.closed:
+                        conn = pool.getconn()
+                    conn.autocommit = False
+                except Exception as pool_err:
+                    print(f"[PostgreSQL pool getconn notice, attempting direct connection]: {pool_err}")
+                    conn = None
+            
+            if conn is None and PSYCOPG2_AVAILABLE:
+                try:
+                    db_url = current_app.config.get('DATABASE_URL', '')
+                    if db_url.startswith('postgres://'):
+                        db_url = db_url.replace('postgres://', 'postgresql://', 1)
+                    conn = psycopg2.connect(db_url, connect_timeout=5)
+                    conn.autocommit = False
+                except Exception as direct_err:
+                    print(f"[PostgreSQL direct connection failed, falling back to SQLite]: {direct_err}")
+                    conn = None
+
+            if conn is not None:
+                g.db = conn
+                g.from_pool = bool(pool is not None)
                 g.is_pg = True
-            except Exception as pg_err:
-                print(f"[PostgreSQL connection failed, auto-falling back to SQLite]: {pg_err}")
+            else:
                 db_path = current_app.config.get('DATABASE_PATH', 'instance/musicwave.db')
                 os.makedirs(os.path.dirname(db_path), exist_ok=True)
                 g.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
                 g.db.row_factory = sqlite3.Row
                 g.db.execute("PRAGMA foreign_keys = ON;")
+                g.from_pool = False
                 g.is_pg = False
         else:
             db_path = current_app.config.get('DATABASE_PATH', 'instance/musicwave.db')
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            g.db = sqlite3.connect(
-                db_path,
-                detect_types=sqlite3.PARSE_DECLTYPES
-            )
+            g.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
             g.db.row_factory = sqlite3.Row
             g.db.execute("PRAGMA foreign_keys = ON;")
+            g.from_pool = False
             g.is_pg = False
     return g.db
 
 def close_db(e=None):
-    """Close the database connection at the end of the request."""
+    """Return connection to pool or close SQLite connection at the end of the request."""
     db = g.pop('db', None)
+    from_pool = g.pop('from_pool', False)
     if db is not None:
-        db.close()
+        if from_pool:
+            pool = get_pg_pool()
+            if pool:
+                try:
+                    if not db.closed:
+                        db.rollback()
+                    pool.putconn(db)
+                except Exception as pe:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
+            else:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        else:
+            try:
+                db.close()
+            except Exception:
+                pass
 
 def init_db(app):
     """Initialize database tables and initial seed data."""
     with app.app_context():
+        # 1. Always ensure SQLite fallback database is initialized with full schema & seed data
+        try:
+            init_sqlite_db()
+        except Exception as e:
+            print(f"[SQLite fallback database init notice]: {e}")
+
+        # 2. Initialize PostgreSQL tables if configured
         try:
             if is_postgres():
                 init_postgres_db()
-            else:
-                init_sqlite_db()
         except Exception as e:
-            print(f"[Database Error during init_db]: {e}")
+            print(f"[PostgreSQL init_db notice]: {e}")
 
 def init_sqlite_db():
-    db = get_db()
+    from flask import current_app, has_app_context
+    if has_app_context():
+        db_path = current_app.config.get('DATABASE_PATH', 'instance/musicwave.db')
+    else:
+        from config import Config
+        db_path = getattr(Config, 'DATABASE_PATH', 'instance/musicwave.db')
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
     schema_path = Path(__file__).parent / "schema.sql"
     with open(schema_path, "r", encoding="utf-8") as f:
-        db.executescript(f.read())
-    seed_common_data(db, is_pg=False)
-    db.commit()
+        conn.executescript(f.read())
+    seed_common_data(conn, is_pg=False)
+    conn.commit()
+    conn.close()
 
 def init_postgres_db():
     db = get_db()
@@ -414,73 +490,89 @@ def seed_common_data(db, is_pg=False):
             cur.execute("INSERT INTO user_settings (user_id) VALUES (?)", (admin_id,))
 
 def query_db(query, args=(), one=False):
-    """Query database safely across SQLite and PostgreSQL."""
-    db = get_db()
-    if is_postgres():
-        cur = db.cursor(cursor_factory=RealDictCursor)
-        # Adapt placeholders and functions for Postgres
-        pg_query = query.replace('?', '%s')
-        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*1\b', r'\1 = TRUE', pg_query)
-        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*0\b', r'\1 = FALSE', pg_query)
-        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*1\b', r'\1 = TRUE', pg_query)
-        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*0\b', r'\1 = FALSE', pg_query)
-        cur.execute(pg_query, args)
-        rv = cur.fetchall()
-        cur.close()
-        return (dict(rv[0]) if rv else None) if one else [dict(r) for r in rv]
-    else:
-        cur = db.execute(query, args)
-        rv = cur.fetchall()
-        cur.close()
-        return (dict(rv[0]) if rv else None) if one else [dict(r) for r in rv]
+    """Query database safely across SQLite and PostgreSQL with auto-retry on severed connections."""
+    for attempt in range(2):
+        try:
+            db = get_db()
+            if is_postgres():
+                cur = db.cursor(cursor_factory=RealDictCursor)
+                # Adapt placeholders and functions for Postgres
+                pg_query = query.replace('?', '%s')
+                pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+                pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*0\b', r'\1 = FALSE', pg_query)
+                pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+                pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*0\b', r'\1 = FALSE', pg_query)
+                cur.execute(pg_query, args)
+                rv = cur.fetchall()
+                cur.close()
+                return (dict(rv[0]) if rv else None) if one else [dict(r) for r in rv]
+            else:
+                cur = db.execute(query, args)
+                rv = cur.fetchall()
+                cur.close()
+                return (dict(rv[0]) if rv else None) if one else [dict(r) for r in rv]
+        except Exception as e:
+            if attempt == 0 and is_postgres() and any(msg in str(e).lower() for msg in ['closed', 'terminat', 'connection', 'broken', 'eof']):
+                from flask import g
+                g.pop('db', None)
+                continue
+            raise e
 
 def execute_db(query, args=(), commit=True):
-    """Execute insert, update, delete safely across SQLite and PostgreSQL."""
-    db = get_db()
-    if is_postgres():
-        cur = db.cursor()
-        pg_query = query.replace('?', '%s')
-        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*1\b', r'\1 = TRUE', pg_query)
-        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*0\b', r'\1 = FALSE', pg_query)
-        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*1\b', r'\1 = TRUE', pg_query)
-        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*0\b', r'\1 = FALSE', pg_query)
-        # If insert, append RETURNING id to get lastrowid if table has id column
-        is_insert = pg_query.strip().upper().startswith('INSERT')
-        has_returning = 'RETURNING' in pg_query.upper()
-        has_do_nothing = 'DO NOTHING' in pg_query.upper()
-        no_id_tables = ['user_profiles', 'user_settings']
-        is_no_id_table = any(t in pg_query.lower() for t in no_id_tables)
-
-        if is_insert and not has_returning and not has_do_nothing and not is_no_id_table:
-            test_query = pg_query.rstrip().rstrip(';') + ' RETURNING id;'
-            try:
-                cur.execute(test_query, args)
-                try:
-                    row = cur.fetchone()
-                    last_id = row[0] if row else None
-                except Exception:
-                    last_id = None
-            except Exception:
-                db.rollback()
+    """Execute insert, update, delete safely across SQLite and PostgreSQL with auto-retry on severed connections."""
+    for attempt in range(2):
+        try:
+            db = get_db()
+            if is_postgres():
                 cur = db.cursor()
-                cur.execute(pg_query, args)
-                last_id = None
-        else:
-            cur.execute(pg_query, args)
-            last_id = None
-        row_count = cur.rowcount
-        if commit:
-            db.commit()
-        cur.close()
-        return last_id, row_count
-    else:
-        cur = db.execute(query, args)
-        if commit:
-            db.commit()
-        last_id = cur.lastrowid
-        row_count = cur.rowcount
-        cur.close()
-        return last_id, row_count
+                pg_query = query.replace('?', '%s')
+                pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+                pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*0\b', r'\1 = FALSE', pg_query)
+                pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+                pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*0\b', r'\1 = FALSE', pg_query)
+                # If insert, append RETURNING id to get lastrowid if table has id column
+                is_insert = pg_query.strip().upper().startswith('INSERT')
+                has_returning = 'RETURNING' in pg_query.upper()
+                has_do_nothing = 'DO NOTHING' in pg_query.upper()
+                no_id_tables = ['user_profiles', 'user_settings']
+                is_no_id_table = any(t in pg_query.lower() for t in no_id_tables)
+
+                if is_insert and not has_returning and not has_do_nothing and not is_no_id_table:
+                    test_query = pg_query.rstrip().rstrip(';') + ' RETURNING id;'
+                    try:
+                        cur.execute(test_query, args)
+                        try:
+                            row = cur.fetchone()
+                            last_id = row[0] if row else None
+                        except Exception:
+                            last_id = None
+                    except Exception:
+                        db.rollback()
+                        cur = db.cursor()
+                        cur.execute(pg_query, args)
+                        last_id = None
+                else:
+                    cur.execute(pg_query, args)
+                    last_id = None
+                row_count = cur.rowcount
+                if commit:
+                    db.commit()
+                cur.close()
+                return last_id, row_count
+            else:
+                cur = db.execute(query, args)
+                if commit:
+                    db.commit()
+                last_id = cur.lastrowid
+                row_count = cur.rowcount
+                cur.close()
+                return last_id, row_count
+        except Exception as e:
+            if attempt == 0 and is_postgres() and any(msg in str(e).lower() for msg in ['closed', 'terminat', 'connection', 'broken', 'eof']):
+                from flask import g
+                g.pop('db', None)
+                continue
+            raise e
 
 def create_guest_user():
     """Create a persistent guest user so visitors can immediately use Jams, playlists, and favorites without hurdles."""
@@ -503,12 +595,25 @@ def create_guest_user():
             "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
             (guest_username, guest_email, pwd_hash)
         )
+        if not user_id:
+            user_row = query_db("SELECT id FROM users WHERE username = ?", (guest_username,), one=True)
+            if user_row:
+                user_id = user_row['id']
+
         if user_id:
-            execute_db(
-                "INSERT INTO user_profiles (user_id, display_name, avatar_url) VALUES (?, ?, '/static/images/default-avatar.png')",
-                (user_id, guest_username)
-            )
-            execute_db("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
+            try:
+                execute_db(
+                    "INSERT INTO user_profiles (user_id, display_name, avatar_url) VALUES (?, ?, '/static/images/default-avatar.png')",
+                    (user_id, guest_username)
+                )
+            except Exception:
+                pass
+
+            try:
+                execute_db("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
+            except Exception:
+                pass
+
             from flask import has_request_context, session
             if has_request_context():
                 session['user_id'] = user_id
