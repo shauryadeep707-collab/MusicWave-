@@ -472,25 +472,36 @@
     background: linear-gradient(135deg, rgba(26, 25, 41, 0.95) 0%, rgba(18, 17, 28, 0.95) 100%);
     border: 1px solid rgba(139, 92, 246, 0.35);
     border-radius: var(--radius-lg);
-    padding: 22px;
+    padding: 20px;
     margin-bottom: 24px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .dual-version-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-bottom: 16px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .dual-version-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1100px) {
     .dual-version-grid {
         grid-template-columns: 1fr;
     }
@@ -500,11 +511,16 @@
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: 16px;
+    padding: 14px 16px;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     transition: all var(--transition-fast);
+    cursor: pointer;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .version-box:hover {
@@ -514,12 +530,38 @@
 }
 
 .version-box-img {
-    width: 68px;
-    height: 68px;
+    width: 64px;
+    height: 64px;
     border-radius: var(--radius-sm);
     object-fit: cover;
     flex-shrink: 0;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.version-box-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.version-box-btn {
+    padding: 7px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    flex-shrink: 0;
+    white-space: nowrap;
+    border-radius: var(--radius-full);
+}
+
+@media (max-width: 580px) {
+    .version-box {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .version-box-btn {
+        width: 100%;
+        text-align: center;
+    }
 }
 
 /* Player Bar Version Switcher */

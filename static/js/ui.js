@@ -308,24 +308,24 @@ const UI = {
                                 ${official ? `
                                     <div class="version-box" onclick="App.playTrack(${offJSON})">
                                         <img src="${official.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" alt="Official"/>
-                                        <div style="flex: 1; min-width: 0;">
+                                        <div class="version-box-info">
                                             <span class="badge" style="background: rgba(139, 92, 246, 0.25); color: var(--primary); font-size: 0.72rem; padding: 2px 8px;">👑 Official Studio Version</span>
                                             <div class="truncate" style="font-weight: 700; font-size: 0.95rem; margin-top: 6px;">${official.title}</div>
                                             <div class="truncate" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">${official.artist_name}</div>
                                         </div>
-                                        <button class="btn-primary" style="padding: 6px 14px; font-size: 0.82rem; flex-shrink: 0;" onclick="event.stopPropagation(); App.playTrack(${offJSON})">▶ Play Official</button>
+                                        <button class="btn-primary version-box-btn" onclick="event.stopPropagation(); App.playTrack(${offJSON})">▶ Play Official</button>
                                     </div>
                                 ` : ''}
 
                                 ${lofi ? `
                                     <div class="version-box" onclick="App.playTrack(${lofiJSON})">
                                         <img src="${lofi.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" alt="Lo-Fi"/>
-                                        <div style="flex: 1; min-width: 0;">
+                                        <div class="version-box-info">
                                             <span class="badge" style="background: rgba(245, 158, 11, 0.25); color: var(--accent-amber); font-size: 0.72rem; padding: 2px 8px;">☕ Lo-Fi Chill Version</span>
                                             <div class="truncate" style="font-weight: 700; font-size: 0.95rem; margin-top: 6px;">${lofi.title}</div>
                                             <div class="truncate" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">${lofi.artist_name}</div>
                                         </div>
-                                        <button class="btn-primary" style="padding: 6px 14px; font-size: 0.82rem; flex-shrink: 0; background: var(--accent-amber); color: #12121c;" onclick="event.stopPropagation(); App.playTrack(${lofiJSON})">▶ Play Lo-Fi</button>
+                                        <button class="btn-primary version-box-btn" style="background: var(--accent-amber); color: #12121c;" onclick="event.stopPropagation(); App.playTrack(${lofiJSON})">▶ Play Lo-Fi</button>
                                     </div>
                                 ` : ''}
                             </div>
