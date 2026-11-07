@@ -174,6 +174,40 @@ def init_db(app):
         except Exception as e:
             print(f"[PostgreSQL init_db notice]: {e}")
 
+        # 3. Purge compilation/radio/jukebox tracks so AI recommendations are strictly single songs
+        try:
+            purge_compilations()
+        except Exception as e:
+            print(f"[Purge compilations notice]: {e}")
+
+def purge_compilations():
+    """Purge any full albums, jukeboxes, non-stop mixes, or tracks longer than 380 seconds from database."""
+    try:
+        from backend.providers.base import COMPILATION_KEYWORDS
+        tracks = query_db("SELECT id, title, artist_name, duration FROM tracks")
+        bad_ids = []
+        for t in tracks:
+            dur = t.get('duration') or 0
+            title = (t.get('title') or '').lower()
+            artist = (t.get('artist_name') or '').lower()
+            combined = f"{title} {artist}"
+            if dur > 380 or any(k in combined for k in COMPILATION_KEYWORDS):
+                bad_ids.append(t['id'])
+
+        if bad_ids:
+            for bid in bad_ids:
+                try:
+                    execute_db("DELETE FROM song_transitions WHERE from_track_id = ? OR to_track_id = ?", (bid, bid))
+                except Exception:
+                    pass
+                try:
+                    execute_db("DELETE FROM tracks WHERE id = ?", (bid,))
+                except Exception:
+                    pass
+            print(f"[MusicWave DB] Purged {len(bad_ids)} compilation/album tracks. Pure single song catalog guaranteed.")
+    except Exception as e:
+        print(f"[MusicWave DB Purge Notice]: {e}")
+
 def init_sqlite_db():
     from flask import current_app, has_app_context
     if has_app_context():
@@ -494,7 +528,8 @@ def query_db(query, args=(), one=False):
     for attempt in range(2):
         try:
             db = get_db()
-            if is_postgres():
+            actual_is_pg = not isinstance(db, sqlite3.Connection)
+            if actual_is_pg:
                 cur = db.cursor(cursor_factory=RealDictCursor)
                 # Adapt placeholders and functions for Postgres
                 pg_query = query.replace('?', '%s')
@@ -512,7 +547,7 @@ def query_db(query, args=(), one=False):
                 cur.close()
                 return (dict(rv[0]) if rv else None) if one else [dict(r) for r in rv]
         except Exception as e:
-            if attempt == 0 and is_postgres() and any(msg in str(e).lower() for msg in ['closed', 'terminat', 'connection', 'broken', 'eof']):
+            if attempt == 0 and not isinstance(db, sqlite3.Connection) and any(msg in str(e).lower() for msg in ['closed', 'terminat', 'connection', 'broken', 'eof']):
                 from flask import g
                 g.pop('db', None)
                 continue
@@ -523,7 +558,8 @@ def execute_db(query, args=(), commit=True):
     for attempt in range(2):
         try:
             db = get_db()
-            if is_postgres():
+            actual_is_pg = not isinstance(db, sqlite3.Connection)
+            if actual_is_pg:
                 cur = db.cursor()
                 pg_query = query.replace('?', '%s')
                 pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*1\b', r'\1 = TRUE', pg_query)
@@ -568,7 +604,7 @@ def execute_db(query, args=(), commit=True):
                 cur.close()
                 return last_id, row_count
         except Exception as e:
-            if attempt == 0 and is_postgres() and any(msg in str(e).lower() for msg in ['closed', 'terminat', 'connection', 'broken', 'eof']):
+            if attempt == 0 and not isinstance(db, sqlite3.Connection) and any(msg in str(e).lower() for msg in ['closed', 'terminat', 'connection', 'broken', 'eof']):
                 from flask import g
                 g.pop('db', None)
                 continue

@@ -686,6 +686,11 @@ const App = {
                 UI.showToast('Preparing YouTube player...', 'info');
                 setTimeout(executeYtPlay, 800);
             }
+
+            // Smart AI background pre-fetch: cache next single song for instant 0ms Next transition
+            setTimeout(() => {
+                this.prefetchNextTrack(track);
+            }, 400);
             return;
         }
 
@@ -712,6 +717,11 @@ const App = {
             console.error('Playback prevented or stream error:', err);
             UI.showToast('Click play on player to start listening', 'info');
         });
+
+        // Smart AI background pre-fetch: cache next single song for instant 0ms Next transition
+        setTimeout(() => {
+            this.prefetchNextTrack(track);
+        }, 400);
     },
 
     togglePlay() {
@@ -798,6 +808,63 @@ const App = {
         }
     },
 
+    isSingleTrack(track) {
+        if (!track) return false;
+        const dur = Number(track.duration) || 0;
+        if (dur > 380) return false; // Reject any mix/show longer than 6:20
+        if (dur > 0 && dur < 40) return false;
+
+        const title = (track.title || '').toLowerCase();
+        const artist = (track.artist_name || '').toLowerCase();
+        const combined = `${title} ${artist}`;
+
+        const banned = [
+            'full album', 'complete album', 'jukebox', 'audio jukebox', 'video jukebox',
+            'non stop', 'non-stop', 'nonstop', 'mashup', 'mega mix', 'megamix',
+            'compilation', 'best of', 'all songs', 'greatest hits', 'hit collection',
+            'carvaan', 'weekend classic', 'radio show', 'podcast', 'episode',
+            'live stream', 'livestream', 'superhit songs', 'top 10 songs',
+            'top 20 songs', 'top 50 songs', 'top 100 songs', 'evergreen songs',
+            'purane gane', 'full songs jukebox', 'audio songs jukebox', 'continuous mix'
+        ];
+
+        for (const kw of banned) {
+            if (combined.includes(kw)) return false;
+        }
+        if (/\b\d+\s*(?:hr|hour|hours)\b/.test(combined)) return false;
+        if (/\b\d{2,}\s+songs\b/.test(combined)) return false;
+        if (/\bradio\s*(?:show|station|broadcast|special)\b/.test(combined)) return false;
+
+        return true;
+    },
+
+    async prefetchNextTrack(track) {
+        if (!track) return;
+        const trackKey = track.id || track.provider_track_id || track.title;
+        if (this._lastPrefetchedSeedKey === trackKey) return;
+        this._lastPrefetchedSeedKey = trackKey;
+
+        try {
+            const history = State.get('playbackHistory') || [];
+            const recentIds = history.map(t => t.id).filter(Boolean);
+
+            const res = await API.getNextRecommended(
+                track.id || '',
+                track.title,
+                track.artist_name,
+                track.genre || '',
+                recentIds
+            );
+
+            if (res && res.next_track && this.isSingleTrack(res.next_track)) {
+                State.set('prefetchedNextTrack', res.next_track);
+                console.log(`[MusicWave AI] Pre-cached next single song: "${res.next_track.title}" (${res.next_track.artist_name})`);
+            }
+        } catch (err) {
+            console.warn('[MusicWave AI Prefetch notice]:', err);
+        }
+    },
+
     async nextTrack() {
         const repeatMode = State.get('repeatMode');
         if (repeatMode === 'one') {
@@ -846,7 +913,23 @@ const App = {
             }
         }
 
-        // 2. Outside a playlist: ALWAYS predict and play the next song matching the previous song!
+        // 2. Outside a playlist: INSTANT transition using pre-fetched AI single song (0ms latency!)
+        const prefetched = State.get('prefetchedNextTrack');
+        const current = State.get('currentTrack');
+        if (prefetched && this.isSingleTrack(prefetched) && prefetched.title !== current?.title) {
+            State.set('prefetchedNextTrack', null);
+            if (current && current.id && prefetched.id) {
+                API.recordTransition(current.id, prefetched.id).catch(() => {});
+            }
+            State.set('playbackSource', 'recommendation');
+            State.set('queue', [prefetched]);
+            State.set('queueIndex', 0);
+            UI.showToast(`✨ Next track: ${prefetched.title} (${prefetched.artist_name})`, 'music');
+            this.playTrack(prefetched);
+            return;
+        }
+
+        // 3. Fallback if prefetch was not completed yet
         await this.playNextRecommended();
     },
 
@@ -855,7 +938,7 @@ const App = {
         if (!current) return;
 
         try {
-            UI.showToast(`✨ Finding next song matching "${current.title}"...`, 'info');
+            UI.showToast(`✨ Finding next single song...`, 'info');
             const history = State.get('playbackHistory') || [];
             if (!history.some(t => (t.id && t.id === current.id) || (t.title === current.title))) {
                 history.push(current);
@@ -871,7 +954,7 @@ const App = {
                 recentIds
             );
 
-            if (res && res.next_track) {
+            if (res && res.next_track && this.isSingleTrack(res.next_track)) {
                 const nextSong = res.next_track;
                 if (current.id && nextSong.id) {
                     API.recordTransition(current.id, nextSong.id).catch(() => {});
@@ -881,37 +964,49 @@ const App = {
                 State.set('queueIndex', 0);
                 this.playTrack(nextSong);
                 UI.showToast(`✨ Next track: ${nextSong.title} (${nextSong.artist_name})`, 'music');
-            } else {
-                // Dynamic discovery fallback: query sibling songs by same artist or genre
-                const fallbackQuery = `${current.artist_name || ''} ${current.genre || ''} hit song`.trim();
-                const searchRes = await API.search(fallbackQuery, 6);
-                if (searchRes && searchRes.results && searchRes.results.length > 0) {
-                    const fallbackTrack = searchRes.results.find(t => t.title !== current.title) || searchRes.results[0];
+                return;
+            }
+
+            // Dynamic discovery fallback: query sibling songs by same artist or genre (strictly singles)
+            const fallbackQuery = `${current.artist_name || ''} ${current.genre || ''} official single song`.trim();
+            const searchRes = await API.search(fallbackQuery, 8);
+            if (searchRes && searchRes.results && searchRes.results.length > 0) {
+                const validSingles = searchRes.results.filter(t => this.isSingleTrack(t) && t.title !== current.title);
+                if (validSingles.length > 0) {
+                    const fallbackTrack = validSingles[0];
                     State.set('playbackSource', 'recommendation');
                     State.set('queue', [fallbackTrack]);
                     State.set('queueIndex', 0);
                     this.playTrack(fallbackTrack);
-                } else {
-                    const trendingRes = await API.getTrending(6);
-                    if (trendingRes && trendingRes.tracks && trendingRes.tracks.length > 0) {
-                        const trTrack = trendingRes.tracks.find(t => t.title !== current.title) || trendingRes.tracks[0];
-                        State.set('playbackSource', 'recommendation');
-                        State.set('queue', [trTrack]);
-                        State.set('queueIndex', 0);
-                        this.playTrack(trTrack);
-                    }
+                    return;
+                }
+            }
+
+            const trendingRes = await API.getTrending(8);
+            if (trendingRes && trendingRes.tracks && trendingRes.tracks.length > 0) {
+                const validTrending = trendingRes.tracks.filter(t => this.isSingleTrack(t) && t.title !== current.title);
+                if (validTrending.length > 0) {
+                    const trTrack = validTrending[0];
+                    State.set('playbackSource', 'recommendation');
+                    State.set('queue', [trTrack]);
+                    State.set('queueIndex', 0);
+                    this.playTrack(trTrack);
+                    return;
                 }
             }
         } catch (e) {
             console.warn('Auto-next recommendation error, using fallback:', e);
             try {
-                const searchRes = await API.search(`${current.artist_name || ''} song`.trim(), 6);
+                const searchRes = await API.search(`${current.artist_name || ''} official single song`.trim(), 8);
                 if (searchRes && searchRes.results && searchRes.results.length > 0) {
-                    const fallbackTrack = searchRes.results.find(t => t.title !== current.title) || searchRes.results[0];
-                    State.set('playbackSource', 'recommendation');
-                    State.set('queue', [fallbackTrack]);
-                    State.set('queueIndex', 0);
-                    this.playTrack(fallbackTrack);
+                    const validSingles = searchRes.results.filter(t => this.isSingleTrack(t) && t.title !== current.title);
+                    if (validSingles.length > 0) {
+                        const fallbackTrack = validSingles[0];
+                        State.set('playbackSource', 'recommendation');
+                        State.set('queue', [fallbackTrack]);
+                        State.set('queueIndex', 0);
+                        this.playTrack(fallbackTrack);
+                    }
                 }
             } catch (fbErr) {
                 console.error("Auto next fallback error:", fbErr);

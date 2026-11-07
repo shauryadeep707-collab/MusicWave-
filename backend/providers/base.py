@@ -1,5 +1,46 @@
+import re
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
+
+COMPILATION_KEYWORDS = [
+    'full album', 'complete album', 'jukebox', 'audio jukebox', 'video jukebox',
+    'non stop', 'non-stop', 'nonstop', 'mashup', 'mega mix', 'megamix',
+    'compilation', 'best of', 'all songs', 'greatest hits', 'hit collection',
+    'songs collection', 'carvaan', 'weekend classic', 'radio show', 'podcast',
+    'episode', 'live stream', 'livestream', 'superhit songs', 'top 10 songs',
+    'top 20 songs', 'top 50 songs', 'top 100 songs', 'evergreen songs',
+    'purane gane', 'full songs jukebox', 'audio songs jukebox', 'disco mix',
+    'remix jukebox', 'continuous mix'
+]
+
+def is_single_track(title: str, artist: str = '', duration: int = 0) -> bool:
+    """
+    Returns True ONLY if this track is a genuine single standalone song,
+    and False if it is a compilation, full album, jukebox, radio show, or continuous mix.
+    """
+    title_lower = (title or '').lower()
+    artist_lower = (artist or '').lower()
+    combined = f"{title_lower} {artist_lower}".strip()
+
+    # Reject tracks with duration longer than 380 seconds (6 minutes 20 seconds)
+    if duration and duration > 380:
+        return False
+    # Reject snippet/preview tracks under 40 seconds
+    if duration and duration < 40:
+        return False
+
+    for kw in COMPILATION_KEYWORDS:
+        if kw in combined:
+            return False
+
+    if re.search(r'\b\d+\s*(?:hr|hour|hours)\b', combined):
+        return False
+    if re.search(r'\b\d{2,}\s+songs\b', combined):
+        return False
+    if re.search(r'\bradio\s*(?:show|station|broadcast|special)\b', combined):
+        return False
+
+    return True
 
 class UnifiedTrack:
     """

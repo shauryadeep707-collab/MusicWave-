@@ -2,6 +2,7 @@ import re
 import math
 from typing import Dict, Any, List, Optional
 from backend.database.db import query_db, execute_db, is_postgres
+from backend.providers.base import is_single_track, COMPILATION_KEYWORDS
 
 ARTIST_AFFINITY_GRAPH = {
     # Bollywood / Romantic / Melody
@@ -141,7 +142,7 @@ class MusicWaveRecommendationEngine:
             """, (current_id,))
 
             for tm in transition_match:
-                if tm['id'] not in exclude:
+                if tm['id'] not in exclude and is_single_track(tm.get('title'), tm.get('artist_name'), tm.get('duration', 0)):
                     return tm
 
         # Step 2: Search local database candidates
@@ -154,10 +155,13 @@ class MusicWaveRecommendationEngine:
             SELECT * FROM tracks
             WHERE artist_name LIKE ? OR genre LIKE ?
             ORDER BY play_count DESC
-            LIMIT 20
+            LIMIT 25
         """, (pattern_art, pattern_genre))
 
-        valid_db_candidates = [c for c in db_candidates if c['id'] not in exclude]
+        valid_db_candidates = [
+            c for c in db_candidates
+            if c['id'] not in exclude and is_single_track(c.get('title'), c.get('artist_name'), c.get('duration', 0))
+        ]
 
         if valid_db_candidates:
             scored = []
@@ -173,18 +177,39 @@ class MusicWaveRecommendationEngine:
         from backend.providers import music_service
         yt_provider = music_service.providers.get('youtube')
 
-        discovery_query = f"{current_track.get('artist_name', '')} {current_features['dominant_genre']} song radio"
+        # Prevent searching for record labels or compilation creators as artists
+        label_names = ['saregama', 't-series', 'tseries', 'zee music', 'speed records', 'tips official', 'tips', 'sony music', 'yrf', 'eros now', 'venus']
+        is_label = any(lbl in curr_artist.lower() for lbl in label_names)
+        dominant_genre = current_features['dominant_genre']
+
+        if is_label or not curr_artist:
+            genre_seeds = {
+                'retro': 'Kishore Kumar',
+                'bollywood': 'Arijit Singh',
+                'punjabi': 'Diljit Dosanjh',
+                'lo-fi': 'Romantic Hindi Lofi',
+                'hip-hop': 'Divine',
+                'pop': 'The Weeknd',
+                'rock': 'Linkin Park',
+                'sad': 'Arijit Singh',
+                'classical': 'Ustad Zakir Hussain'
+            }
+            artist_seed = genre_seeds.get(dominant_genre, 'Arijit Singh')
+            discovery_query = f"{artist_seed} {dominant_genre} official audio single song"
+        else:
+            discovery_query = f"{curr_artist} {dominant_genre} official audio single song"
+
         discovered_tracks = []
         if yt_provider:
             try:
-                discovered_tracks = yt_provider.search(discovery_query, limit=8)
+                discovered_tracks = yt_provider.search(discovery_query, limit=10)
             except Exception as e:
                 print(f"[Recommendation Discovery error]: {e}")
 
         if not discovered_tracks:
-            discovered_tracks = music_service.search(discovery_query, limit=8)
+            discovered_tracks = music_service.search(discovery_query, limit=10)
 
-        # Filter and score discovered tracks
+        # Filter and score discovered tracks - STRICT single song enforcement
         candidate_dicts = []
         for dt in discovered_tracks:
             d = dt.to_dict() if hasattr(dt, 'to_dict') else dt
@@ -192,6 +217,9 @@ class MusicWaveRecommendationEngine:
             if d.get('provider_track_id') == current_track.get('provider_track_id'):
                 continue
             if d.get('title', '').lower() == current_track.get('title', '').lower():
+                continue
+            # Strictly reject any multi-hour mixes, jukeboxes, or podcasts
+            if not is_single_track(d.get('title'), d.get('artist_name'), d.get('duration', 0)):
                 continue
             sim = self.calculate_similarity(current_features, d)
             candidate_dicts.append((sim, d))
@@ -204,11 +232,12 @@ class MusicWaveRecommendationEngine:
             persisted = music_service._persist_tracks([best_track])
             return persisted[0] if persisted else best_track
 
-        # Fallback to general trending
-        trending = music_service.get_trending(limit=5)
+        # Fallback to general trending (strictly verified single songs)
+        trending = music_service.get_trending(limit=8)
         for tr in trending:
             if tr.get('id') not in exclude and tr.get('title') != current_track.get('title'):
-                return tr
+                if is_single_track(tr.get('title'), tr.get('artist_name'), tr.get('duration', 0)):
+                    return tr
 
         return None
 

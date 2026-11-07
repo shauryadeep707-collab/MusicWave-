@@ -2,7 +2,7 @@ import re
 import json
 import requests
 from typing import Optional, List
-from .base import BaseMusicProvider, UnifiedTrack
+from .base import BaseMusicProvider, UnifiedTrack, is_single_track
 
 class YouTubeProvider(BaseMusicProvider):
     """
@@ -102,10 +102,10 @@ class YouTubeProvider(BaseMusicProvider):
             return [t] if t else []
 
         query_lower = query.lower()
-        if any(term in query_lower for term in ['lofi', 'lo-fi', 'slowed', 'reverb', 'chill', 'remix', 'official', 'audio', 'video', 'cover']):
-            search_query = query
-        else:
+        if any(term in query_lower for term in ['lofi', 'lo-fi', 'slowed', 'reverb', 'chill', 'remix', 'cover', 'single']):
             search_query = f"{query} song"
+        else:
+            search_query = f"{query} official single song"
 
         # 1. High-Speed Official YouTube Data API v3 (if API key is connected)
         if self.api_key:
@@ -143,10 +143,14 @@ class YouTubeProvider(BaseMusicProvider):
                         clean_title = re.sub(r'\(Official\s*(Video|Audio|Music Video|Lyric Video|HD|4K|Visualizer).*?\)', '', clean_title, flags=re.IGNORECASE).strip()
                         clean_title = re.sub(r'\[Official\s*(Video|Audio|Music Video|Lyric Video|HD|4K|Visualizer).*?\]', '', clean_title, flags=re.IGNORECASE).strip()
 
+                        final_title = clean_title or raw_title
+                        if not is_single_track(final_title, artist_name, 210):
+                            continue
+
                         api_tracks.append(UnifiedTrack(
                             provider_id=self.provider_id,
                             provider_track_id=vid,
-                            title=clean_title or raw_title,
+                            title=final_title,
                             artist_name=artist_name,
                             album_name="YouTube Music",
                             genre="YouTube Music",
@@ -211,10 +215,16 @@ class YouTubeProvider(BaseMusicProvider):
                         clean_title = re.sub(r'\(Official\s*(Video|Audio|Music Video|Lyric Video|HD|4K|Visualizer).*?\)', '', clean_title, flags=re.IGNORECASE).strip()
                         clean_title = re.sub(r'\[Official\s*(Video|Audio|Music Video|Lyric Video|HD|4K|Visualizer).*?\]', '', clean_title, flags=re.IGNORECASE).strip()
 
+                        final_title = clean_title or raw_title
+
+                        # Strictly reject compilations, multi-hour albums, jukeboxes, and radio shows
+                        if not is_single_track(final_title, artist_name, duration_secs):
+                            continue
+
                         track = UnifiedTrack(
                             provider_id=self.provider_id,
                             provider_track_id=vid,
-                            title=clean_title or raw_title,
+                            title=final_title,
                             artist_name=artist_name,
                             album_name="YouTube Music",
                             genre="YouTube Music",

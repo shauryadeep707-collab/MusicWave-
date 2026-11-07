@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from backend.database.db import query_db, execute_db, is_postgres
-from .base import UnifiedTrack
+from .base import UnifiedTrack, is_single_track
 from .internet_archive import InternetArchiveProvider
 from .jamendo import JamendoProvider
 from .local_vault import LocalVaultProvider
@@ -48,6 +48,10 @@ class MusicService:
             album_name = track.get('album_name') if is_dict else getattr(track, 'album_name', '')
             genre = track.get('genre') if is_dict else getattr(track, 'genre', '')
             duration = track.get('duration') if is_dict else getattr(track, 'duration', 0)
+
+            # Strictly reject compilations, multi-hour albums, jukeboxes, and radio shows
+            if not is_single_track(title, artist_name, duration):
+                continue
             artwork_url = track.get('artwork_url') if is_dict else getattr(track, 'artwork_url', '')
             stream_url = track.get('stream_url') if is_dict else getattr(track, 'stream_url', '')
             download_url = track.get('download_url') if is_dict else getattr(track, 'download_url', '')
@@ -58,31 +62,18 @@ class MusicService:
             source_name = track.get('source_name') if is_dict else getattr(track, 'source_name', '')
 
             try:
-                if is_pg:
-                    execute_db("""
-                        INSERT INTO tracks (
-                            provider_id, provider_track_id, title, artist_name, album_name,
-                            genre, duration, artwork_url, stream_url, download_url,
-                            download_allowed, streaming_allowed, licence_information, licence_url, source_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (provider_id, provider_track_id) DO NOTHING
-                    """, (
+                execute_db("""
+                    INSERT INTO tracks (
                         provider_id, provider_track_id, title, artist_name, album_name,
                         genre, duration, artwork_url, stream_url, download_url,
                         download_allowed, streaming_allowed, licence_information, licence_url, source_name
-                    ))
-                else:
-                    execute_db("""
-                        INSERT OR IGNORE INTO tracks (
-                            provider_id, provider_track_id, title, artist_name, album_name,
-                            genre, duration, artwork_url, stream_url, download_url,
-                            download_allowed, streaming_allowed, licence_information, licence_url, source_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        provider_id, provider_track_id, title, artist_name, album_name,
-                        genre, duration, artwork_url, stream_url, download_url,
-                        download_allowed, streaming_allowed, licence_information, licence_url, source_name
-                    ))
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (provider_id, provider_track_id) DO NOTHING
+                """, (
+                    provider_id, provider_track_id, title, artist_name, album_name,
+                    genre, duration, artwork_url, stream_url, download_url,
+                    download_allowed, streaming_allowed, licence_information, licence_url, source_name
+                ))
 
                 saved = query_db(
                     "SELECT * FROM tracks WHERE provider_id = ? AND provider_track_id = ?",
@@ -241,7 +232,7 @@ class MusicService:
         results = []
         for t in (db_tracks or []) + track_dicts:
             key = (t.get('provider_id'), t.get('provider_track_id'))
-            if key not in seen:
+            if key not in seen and is_single_track(t.get('title'), t.get('artist_name'), t.get('duration', 0)):
                 seen.add(key)
                 results.append(t)
             if len(results) >= limit:
@@ -290,7 +281,7 @@ class MusicService:
         results = []
         for t in (cached or []) + track_dicts:
             key = (t.get('provider_id'), t.get('provider_track_id'))
-            if key not in seen:
+            if key not in seen and is_single_track(t.get('title'), t.get('artist_name'), t.get('duration', 0)):
                 seen.add(key)
                 results.append(t)
             if len(results) >= limit:
