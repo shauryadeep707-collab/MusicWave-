@@ -11,11 +11,11 @@
     <link rel="manifest" href="/static/manifest.json">
 
     <!-- Stylesheets -->
-    <link rel="stylesheet" href="/static/css/variables.css?v=2.3">
-    <link rel="stylesheet" href="/static/css/base.css?v=2.3">
-    <link rel="stylesheet" href="/static/css/layout.css?v=2.3">
-    <link rel="stylesheet" href="/static/css/components.css?v=2.3">
-    <link rel="stylesheet" href="/static/css/player.css?v=2.3">
+    <link rel="stylesheet" href="/static/css/variables.css?v=2.4">
+    <link rel="stylesheet" href="/static/css/base.css?v=2.4">
+    <link rel="stylesheet" href="/static/css/layout.css?v=2.4">
+    <link rel="stylesheet" href="/static/css/components.css?v=2.4">
+    <link rel="stylesheet" href="/static/css/player.css?v=2.4">
 
     <!-- Socket.IO & YouTube IFrame Player API -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -259,6 +259,61 @@
     </div>
 
     <!-- ==============================================
+         HOST JAM MODAL (Create Room)
+         ============================================== -->
+    <div class="modal-overlay" id="create-jam-modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span>🎧 Host a Music Jam</span>
+                </h3>
+                <button class="icon-btn" onclick="App.closeCreateJamModal()">✕</button>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px;">
+                Start a live listening room! You will get a <strong>4-digit code</strong> to share with friends so everyone listens together in real time:
+            </p>
+            <form onsubmit="App.handleCreateJamSubmit(event)">
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Jam Room Name</label>
+                    <input type="text" id="create-jam-name-input" class="form-input" style="width: 100%; padding: 10px 14px;" placeholder="e.g. Bollywood & Chill, Late Night Vibes" required autocomplete="off" />
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Description (Optional)</label>
+                    <input type="text" id="create-jam-desc-input" class="form-input" style="width: 100%; padding: 10px 14px;" placeholder="e.g. Listening party with friends" autocomplete="off" />
+                </div>
+                <div id="create-jam-error-msg" style="color: var(--accent-rose); font-size: 0.84rem; margin-bottom: 14px; display: none;"></div>
+                <button type="submit" class="btn-primary" id="create-jam-submit-btn" style="width: 100%; padding: 12px; font-size: 0.95rem;">
+                    🚀 Create Jam Room & Get 4-Digit Code
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==============================================
+         CREATE PLAYLIST MODAL
+         ============================================== -->
+    <div class="modal-overlay" id="create-playlist-modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span>📁 Create New Playlist</span>
+                </h3>
+                <button class="icon-btn" onclick="App.closeCreatePlaylistModal()">✕</button>
+            </div>
+            <form onsubmit="App.handleCreatePlaylistSubmit(event)">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Playlist Title</label>
+                    <input type="text" id="create-playlist-title-input" class="form-input" style="width: 100%; padding: 10px 14px;" placeholder="e.g. My Favorite Bangers" required autocomplete="off" />
+                </div>
+                <div id="create-playlist-error-msg" style="color: var(--accent-rose); font-size: 0.84rem; margin-bottom: 14px; display: none;"></div>
+                <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem;">
+                    Create Playlist
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==============================================
          JOIN JAM MODAL (4-Digit Code & Room ID)
          ============================================== -->
     <div class="modal-overlay" id="join-jam-modal-overlay">
@@ -321,9 +376,9 @@
     <div id="toast-container"></div>
 
     <!-- Scripts -->
-    <script src="/static/js/api.js?v=2.3"></script>
-    <script src="/static/js/state.js?v=2.3"></script>
-    <script src="/static/js/ui.js?v=2.3"></script>
-    <script src="/static/js/app.js?v=2.3"></script>
+    <script src="/static/js/api.js?v=2.4"></script>
+    <script src="/static/js/state.js?v=2.4"></script>
+    <script src="/static/js/ui.js?v=2.4"></script>
+    <script src="/static/js/app.js?v=2.4"></script>
 </body>
 </html>

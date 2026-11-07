@@ -1186,36 +1186,107 @@ const App = {
         }
     },
 
-    async openCreateJamModal() {
-        let user = State.get('user');
-        if (!user) {
-            user = await API.createGuestSession();
+    openCreateJamModal() {
+        const overlay = document.getElementById('create-jam-modal-overlay');
+        const input = document.getElementById('create-jam-name-input');
+        const descInput = document.getElementById('create-jam-desc-input');
+        const err = document.getElementById('create-jam-error-msg');
+        if (err) err.style.display = 'none';
+        if (input) {
+            input.value = '';
+            setTimeout(() => input.focus(), 150);
         }
-        const name = prompt('Enter a name for your Music Jam room:');
-        if (!name || !name.trim()) return;
+        if (descInput) descInput.value = '';
+        if (overlay) overlay.classList.add('active');
+    },
+
+    closeCreateJamModal() {
+        const overlay = document.getElementById('create-jam-modal-overlay');
+        if (overlay) overlay.classList.remove('active');
+    },
+
+    async handleCreateJamSubmit(e) {
+        e.preventDefault();
+        const input = document.getElementById('create-jam-name-input');
+        const descInput = document.getElementById('create-jam-desc-input');
+        const errEl = document.getElementById('create-jam-error-msg');
+        const submitBtn = document.getElementById('create-jam-submit-btn');
+
+        const name = input ? input.value.trim() : '';
+        const description = descInput ? descInput.value.trim() : '';
+        if (!name) return;
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating Room...';
+        }
+
         try {
-            UI.showToast('Creating Jam room...', 'info');
-            const res = await API.createJam(name.trim(), 'A real-time music jam room');
-            UI.showToast(`Jam room "${name.trim()}" created! 4-Digit Code: ${res.room.join_code}`, 'success');
+            let user = State.get('user');
+            if (!user) {
+                user = await API.createGuestSession();
+            }
+
+            UI.showToast('Setting up your Jam room...', 'info');
+            const res = await API.createJam(name, description || 'Synchronized music listening party');
+            this.closeCreateJamModal();
+            UI.showToast(`🎉 Jam room "${name}" created! 4-Digit Code: ${res.room.join_code}`, 'success');
             await this.enterJamRoom(res.room.id);
         } catch (err) {
-            UI.showToast(err.message || 'Failed to create Jam room', 'error');
+            if (errEl) {
+                errEl.textContent = err.message || 'Failed to create Jam room';
+                errEl.style.display = 'block';
+            } else {
+                UI.showToast(err.message || 'Failed to create Jam room', 'error');
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Create Jam Room & Get 4-Digit Code';
+            }
         }
     },
 
-    async openCreatePlaylistModal() {
-        let user = State.get('user') || localStorage.getItem('musicwave_user_id');
-        if (!user) {
-            user = await API.createGuestSession();
+    openCreatePlaylistModal() {
+        const overlay = document.getElementById('create-playlist-modal-overlay');
+        const input = document.getElementById('create-playlist-title-input');
+        const err = document.getElementById('create-playlist-error-msg');
+        if (err) err.style.display = 'none';
+        if (input) {
+            input.value = '';
+            setTimeout(() => input.focus(), 150);
         }
-        const name = prompt('Enter a title for your new playlist:');
-        if (!name || !name.trim()) return;
+        if (overlay) overlay.classList.add('active');
+    },
+
+    closeCreatePlaylistModal() {
+        const overlay = document.getElementById('create-playlist-modal-overlay');
+        if (overlay) overlay.classList.remove('active');
+    },
+
+    async handleCreatePlaylistSubmit(e) {
+        e.preventDefault();
+        const input = document.getElementById('create-playlist-title-input');
+        const errEl = document.getElementById('create-playlist-error-msg');
+        const title = input ? input.value.trim() : '';
+        if (!title) return;
+
         try {
-            await API.createPlaylist(name.trim(), '');
-            UI.showToast(`Playlist "${name.trim()}" created!`, 'success');
+            let user = State.get('user') || localStorage.getItem('musicwave_user_id');
+            if (!user) {
+                user = await API.createGuestSession();
+            }
+            await API.createPlaylist(title, '');
+            this.closeCreatePlaylistModal();
+            UI.showToast(`Playlist "${title}" created!`, 'success');
             this.navigateTo('library');
         } catch (err) {
-            UI.showToast(err.message || 'Failed to create playlist', 'error');
+            if (errEl) {
+                errEl.textContent = err.message || 'Failed to create playlist';
+                errEl.style.display = 'block';
+            } else {
+                UI.showToast(err.message || 'Failed to create playlist', 'error');
+            }
         }
     },
 
