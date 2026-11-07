@@ -604,12 +604,16 @@ const UI = {
         API.getJams().then(res => {
             const grid = document.getElementById('jams-page-grid');
             if (!grid) return;
+            const currentUser = State.get('user');
             if (res.jams && res.jams.length > 0) {
-                grid.innerHTML = res.jams.map(j => `
+                grid.innerHTML = res.jams.map(j => {
+                    const isMyRoom = currentUser && (j.host_id === currentUser.id);
+                    return `
                     <div class="music-card" onclick="App.enterJamRoom('${j.id}')">
                         <div class="music-card-cover-wrapper">
                             <img src="${j.cover_url || '/static/images/default-jam.png'}" class="music-card-cover" alt="${j.name}"/>
                             <span class="version-badge official-badge" style="top: 8px; left: 8px;">🔑 ${j.join_code ? j.join_code : 'Open'}</span>
+                            ${isMyRoom ? '<span class="version-badge" style="top: 8px; right: 8px; background: rgba(245, 158, 11, 0.9); color: #000; font-weight: 700;">👑 Your Room</span>' : ''}
                             <div class="music-card-play-overlay">
                                 <div class="play-circle-btn">
                                     <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -617,9 +621,11 @@ const UI = {
                             </div>
                         </div>
                         <div class="music-card-title truncate">${j.name}</div>
-                        <div class="music-card-subtitle truncate">Host: ${j.host_name} • ${j.participant_count} listening</div>
+                        <div class="music-card-subtitle truncate">Host: ${isMyRoom ? 'You' : j.host_name} • ${j.participant_count} listening</div>
+                        <div style="font-size: 0.72rem; color: #10b981; margin-top: 4px;">● Active until ended by ${isMyRoom ? 'you' : 'host'}</div>
                     </div>
-                `).join('');
+                `;
+                }).join('');
             } else {
                 grid.innerHTML = `
                     <div style="grid-column: 1/-1; padding: 40px; text-align: center; color: var(--text-secondary); background: var(--bg-surface); border-radius: var(--radius-md);">
@@ -641,6 +647,8 @@ const UI = {
         const isExpired = data.is_code_expired;
         const remSec = data.remaining_seconds || 0;
 
+        const safeName = (room.name || '').replace(/'/g, "\\'");
+
         container.innerHTML = `
             <div class="section-header">
                 <div>
@@ -648,16 +656,28 @@ const UI = {
                         ${isHost ? '👑 You are the Jam Host' : '🎧 Joined as Listener'}
                     </span>
                     <h1 class="section-title" style="font-size: 2rem; margin-top: 6px;">${room.name}</h1>
-                    <p style="color: var(--text-secondary); font-size: 0.9rem;">${room.description || 'Synchronized music jam party'}</p>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">
+                        ${room.description || 'Synchronized music jam party'}
+                        <span style="display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: #10b981; font-weight: 600; font-size: 0.8rem; background: rgba(16, 185, 129, 0.12); padding: 2px 8px; border-radius: 999px;">
+                            ● Active until ended by ${isHost ? 'you (Owner)' : 'Owner'}
+                        </span>
+                    </p>
                 </div>
-                <button class="btn-secondary" onclick="App.leaveCurrentJam('${room.id}')">← Leave Jam</button>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    ${isHost ? `
+                        <button class="btn-secondary" onclick="App.leaveCurrentJam('${room.id}', true)">← Step Out (Keep Active)</button>
+                        <button class="btn-primary" style="background: var(--accent-rose, #f43f5e); border: none; padding: 8px 16px;" onclick="App.endCurrentJam('${room.id}', '${safeName}')">⛔ End Jam</button>
+                    ` : `
+                        <button class="btn-secondary" onclick="App.leaveCurrentJam('${room.id}', false)">← Leave Jam</button>
+                    `}
+                </div>
             </div>
 
-            <!-- 4-Digit Join Code Box with Live Countdown -->
+            <!-- 4-Digit Join Code Box with Live Countdown & Room Persistence Info -->
             <div class="jam-code-box">
                 <div>
                     <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 4px;">
-                        Room ID: <strong style="color: var(--text-primary);">${room.id}</strong>
+                        Room ID: <strong style="color: var(--text-primary);">${room.id}</strong> (Permanent ID)
                     </div>
                     <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                         <div>
@@ -669,7 +689,7 @@ const UI = {
                                 ${isExpired ? '⚠️ Code Expired (10 min passed)' : `⏱ Expires in: <span id="jam-countdown-text">${UI.formatTime(remSec)}</span>`}
                             </div>
                             <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
-                                Codes expire every 10 min for room security
+                                Codes expire every 10 min for security • Room stays alive until ended by owner
                             </div>
                         </div>
                     </div>
@@ -681,11 +701,14 @@ const UI = {
                         <button class="btn-primary" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);" onclick="App.regenerateJamCode('${room.id}')">
                             🔄 Generate New 4-Digit Code
                         </button>
+                        <button class="btn-secondary" style="border-color: rgba(244, 63, 94, 0.4); color: var(--accent-rose, #f43f5e); font-size: 0.78rem; padding: 5px 10px;" onclick="App.endCurrentJam('${room.id}', '${safeName}')">
+                            ⛔ Close / End Room
+                        </button>
                         <span style="font-size: 0.72rem; color: var(--text-muted); text-align: center;">Jam Settings • Host Control</span>
                     </div>
                 ` : `
                     <div style="font-size: 0.8rem; color: var(--text-secondary);">
-                        ${isExpired ? 'Please ask the host to renew the code in Jam Settings.' : 'Share this 4-digit code with friends to let them join.'}
+                        ${isExpired ? 'The 4-digit code expired, but the room is still running! Ask host for a fresh code.' : 'Share this 4-digit code with friends to let them join.'}
                     </div>
                 `}
             </div>

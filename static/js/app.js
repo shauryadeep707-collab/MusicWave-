@@ -795,15 +795,38 @@ const App = {
         }
     },
 
-    async leaveCurrentJam(roomId) {
+    async leaveCurrentJam(roomId, isHost = false) {
         if (this.jamTimer) {
             clearInterval(this.jamTimer);
             this.jamTimer = null;
         }
         await API.leaveJam(roomId).catch(() => {});
         State.set('activeJamRoom', null);
-        UI.showToast('Left Jam party.', 'info');
+        if (isHost) {
+            UI.showToast('Stepped out. Your Jam room remains active until you choose to end it.', 'info');
+        } else {
+            UI.showToast('Left Jam party.', 'info');
+        }
         this.navigateTo('jams');
+    },
+
+    async endCurrentJam(roomId, roomName = 'this Jam room') {
+        const confirmed = confirm(`Are you sure you want to END "${roomName}"?\n\nThis will permanently close the Jam room for all listeners.\n\nNote: your Jam room stays active forever until you confirm here.`);
+        if (!confirmed) return;
+
+        try {
+            UI.showToast('Ending Jam room...', 'info');
+            if (this.jamTimer) {
+                clearInterval(this.jamTimer);
+                this.jamTimer = null;
+            }
+            await API.endJam(roomId);
+            State.set('activeJamRoom', null);
+            UI.showToast('Jam room has been ended and closed.', 'success');
+            this.navigateTo('jams');
+        } catch (err) {
+            UI.showToast(err.message || 'Failed to end Jam room', 'error');
+        }
     },
 
     openCreateJamModal() {

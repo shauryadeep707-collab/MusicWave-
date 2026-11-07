@@ -197,6 +197,11 @@ const API = {
             method: 'POST'
         });
     },
+    endJam(roomId) {
+        return this.request(`/api/jams/${roomId}/end`, {
+            method: 'POST'
+        });
+    },
     syncJamPlayback(roomId, trackId, playbackStatus = 'playing', position = 0) {
         return this.request(`/api/jams/${roomId}/sync`, {
             method: 'POST',

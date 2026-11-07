@@ -281,8 +281,39 @@ def sync_playback(room_id):
 
 @jams_bp.route('/<room_id>/leave', methods=['POST'])
 def leave_jam(room_id):
-    """Leave the Jam room."""
+    """
+    Leave the Jam room.
+    Note: The Jam room itself remains alive and active until explicitly ended by its host/owner.
+    """
     user_id = get_auth_user_id()
     if user_id:
         execute_db("DELETE FROM jam_participants WHERE room_id = ? AND user_id = ?", (room_id, user_id))
     return jsonify({'status': 'left'}), 200
+
+@jams_bp.route('/<room_id>/end', methods=['POST'])
+def end_jam(room_id):
+    """
+    Owner/Host action: Permanently end and close the Jam room.
+    The room stays active indefinitely until the owner explicitly ends it here.
+    """
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required to end this Jam room'}), 401
+
+    room = query_db("SELECT * FROM jam_rooms WHERE id = ?", (room_id,), one=True)
+    if not room:
+        return jsonify({'error': 'Jam room not found'}), 404
+
+    if room['host_id'] != user_id:
+        return jsonify({'error': 'Only the Jam room host/owner can end this room'}), 403
+
+    # Mark room inactive - it stays alive until the owner takes this explicit action
+    execute_db("UPDATE jam_rooms SET is_active = ? WHERE id = ?", (False, room_id))
+    # Disconnect all participants
+    execute_db("DELETE FROM jam_participants WHERE room_id = ?", (room_id,))
+
+    return jsonify({
+        'status': 'ended',
+        'message': f'Jam room "{room["name"]}" has been ended by the owner.'
+    }), 200
+
