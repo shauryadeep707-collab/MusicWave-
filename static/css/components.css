@@ -472,7 +472,7 @@
     background: linear-gradient(135deg, rgba(26, 25, 41, 0.95) 0%, rgba(18, 17, 28, 0.95) 100%);
     border: 1px solid rgba(139, 92, 246, 0.35);
     border-radius: var(--radius-lg);
-    padding: 20px;
+    padding: 18px 20px;
     margin-bottom: 24px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     width: 100%;
@@ -489,6 +489,7 @@
     gap: 8px;
     margin-bottom: 16px;
     width: 100%;
+    max-width: 100%;
     box-sizing: border-box;
 }
 
@@ -519,6 +520,7 @@
     cursor: pointer;
     min-width: 0;
     max-width: 100%;
+    width: 100%;
     box-sizing: border-box;
     overflow: hidden;
 }
@@ -539,8 +541,9 @@
 }
 
 .version-box-info {
-    flex: 1;
+    flex: 1 1 0%;
     min-width: 0;
+    width: 0;
     overflow: hidden;
 }
 

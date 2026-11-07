@@ -441,46 +441,27 @@ const App = {
         const lastQuery = State.get('lastSearchQuery') || '';
         API.autoSortTrack(track.id, lastQuery, track.title, track.artist_name).catch(() => {});
 
-        // Queue synchronization & history tracking
-        const queue = State.get('queue') || [];
-        const trackIdx = queue.findIndex(t => 
-            (t.id && track.id && t.id === track.id) ||
-            (t.provider_track_id && track.provider_track_id && t.provider_track_id === track.provider_track_id) ||
-            (t.title === track.title && t.artist_name === track.artist_name)
-        );
+        // Queue synchronization & playback mode tracking
+        const playbackSource = State.get('playbackSource');
+        const playlistTracks = State.get('activePlaylistTracks') || [];
+        const isPlaylistPlayback = playbackSource === 'playlist' || State.get('activePage') === 'playlist';
 
-        if (trackIdx !== -1) {
-            State.set('queueIndex', trackIdx);
-        } else {
-            // Check if track is part of the currently viewed playlist
-            const playlistTracks = State.get('activePlaylistTracks') || [];
-            const playlistIdx = playlistTracks.findIndex(t =>
+        if (isPlaylistPlayback && playlistTracks.length > 0) {
+            // User is playing inside a playlist: queue ALL songs present in that playlist!
+            State.set('playbackSource', 'playlist');
+            const pIdx = playlistTracks.findIndex(t =>
                 (t.id && track.id && t.id === track.id) ||
                 (t.provider_track_id && track.provider_track_id && t.provider_track_id === track.provider_track_id) ||
                 (t.title === track.title)
             );
-
-            if (playlistIdx !== -1 && playlistTracks.length > 0) {
-                // Queue the entire playlist so all songs play in continuous order
-                State.set('queue', [...playlistTracks]);
-                State.set('queueIndex', playlistIdx);
-            } else {
-                // Check if track is part of the current search results
-                const searchResults = State.get('lastSearchResults') || [];
-                const searchIdx = searchResults.findIndex(t =>
-                    (t.id && track.id && t.id === track.id) ||
-                    (t.provider_track_id && track.provider_track_id && t.provider_track_id === track.provider_track_id) ||
-                    (t.title === track.title)
-                );
-                if (searchIdx !== -1) {
-                    State.set('queue', [...searchResults]);
-                    State.set('queueIndex', searchIdx);
-                } else {
-                    queue.push(track);
-                    State.set('queue', queue);
-                    State.set('queueIndex', queue.length - 1);
-                }
-            }
+            State.set('queue', [...playlistTracks]);
+            State.set('queueIndex', pIdx !== -1 ? pIdx : 0);
+        } else {
+            // Outside of a playlist (from search results, explore, home, recommendations):
+            // Strictly do NOT queue search results! Keep single track and engage recommendation engine for auto-next
+            State.set('playbackSource', 'recommendation');
+            State.set('queue', [track]);
+            State.set('queueIndex', 0);
         }
 
         State.set('currentTrack', track);
@@ -566,13 +547,34 @@ const App = {
     },
 
     prevTrack() {
-        const queue = State.get('queue');
-        let idx = State.get('queueIndex') - 1;
-        if (idx >= 0 && queue[idx]) {
-            State.set('queueIndex', idx);
-            this.playTrack(queue[idx]);
-        } else if (this.audio.currentTime > 3) {
+        const playbackSource = State.get('playbackSource');
+        const queue = State.get('queue') || [];
+
+        if (playbackSource === 'playlist' && queue.length > 0) {
+            let idx = State.get('queueIndex') - 1;
+            if (idx >= 0 && queue[idx]) {
+                State.set('queueIndex', idx);
+                this.playTrack(queue[idx]);
+                return;
+            }
+        }
+
+        // Check playbackHistory for previous songs in recommendation mode
+        const history = State.get('playbackHistory') || [];
+        if (history.length > 0) {
+            const prevSong = history.pop();
+            State.set('playbackHistory', history);
+            State.set('playbackSource', 'recommendation');
+            State.set('queue', [prevSong]);
+            State.set('queueIndex', 0);
+            this.playTrack(prevSong);
+            return;
+        }
+
+        if (this.audio && this.audio.currentTime > 3) {
             this.audio.currentTime = 0;
+        } else if (this.ytPlayer && this.ytPlayer.seekTo) {
+            this.ytPlayer.seekTo(0);
         }
     },
 
@@ -592,30 +594,40 @@ const App = {
             }
         }
 
+        const playbackSource = State.get('playbackSource');
         const queue = State.get('queue') || [];
         const shuffle = State.get('shuffle');
 
-        if (shuffle && queue.length > 1) {
-            let nextIdx = Math.floor(Math.random() * queue.length);
-            if (nextIdx === State.get('queueIndex')) {
-                nextIdx = (nextIdx + 1) % queue.length;
+        // 1. Inside a playlist: play through ALL songs in the playlist
+        if (playbackSource === 'playlist' && queue.length > 0) {
+            if (shuffle && queue.length > 1) {
+                let nextIdx = Math.floor(Math.random() * queue.length);
+                if (nextIdx === State.get('queueIndex')) {
+                    nextIdx = (nextIdx + 1) % queue.length;
+                }
+                State.set('queueIndex', nextIdx);
+                this.playTrack(queue[nextIdx]);
+                return;
             }
-            State.set('queueIndex', nextIdx);
-            this.playTrack(queue[nextIdx]);
-            return;
+
+            let idx = State.get('queueIndex') + 1;
+            if (idx < queue.length && queue[idx]) {
+                State.set('queueIndex', idx);
+                this.playTrack(queue[idx]);
+                return;
+            } else if (repeatMode === 'all') {
+                State.set('queueIndex', 0);
+                this.playTrack(queue[0]);
+                return;
+            } else {
+                UI.showToast('Playlist finished. Continuous recommendation engaged...', 'info');
+                await this.playNextRecommended();
+                return;
+            }
         }
 
-        let idx = State.get('queueIndex') + 1;
-        if (idx < queue.length && queue[idx]) {
-            State.set('queueIndex', idx);
-            this.playTrack(queue[idx]);
-        } else if (repeatMode === 'all' && queue.length > 0) {
-            State.set('queueIndex', 0);
-            this.playTrack(queue[0]);
-        } else {
-            // Queue ended or playing single song: seamlessly auto-recommend and auto-play the next song matching the previous track
-            await this.playNextRecommended();
-        }
+        // 2. Outside a playlist: ALWAYS predict and play the next song matching the previous song!
+        await this.playNextRecommended();
     },
 
     async playNextRecommended() {
@@ -623,35 +635,67 @@ const App = {
         if (!current) return;
 
         try {
-            UI.showToast(`✨ Auto-finding next song matching "${current.title}"...`, 'info');
-            const recent = (State.get('queue') || []).map(t => t.id).filter(Boolean);
+            UI.showToast(`✨ Finding next song matching "${current.title}"...`, 'info');
+            const history = State.get('playbackHistory') || [];
+            if (!history.some(t => (t.id && t.id === current.id) || (t.title === current.title))) {
+                history.push(current);
+                State.set('playbackHistory', history);
+            }
+            const recentIds = history.map(t => t.id).filter(Boolean);
+
             const res = await API.getNextRecommended(
                 current.id || '',
                 current.title,
                 current.artist_name,
                 current.genre || '',
-                recent
+                recentIds
             );
 
             if (res && res.next_track) {
                 const nextSong = res.next_track;
-                const queue = State.get('queue') || [];
-                queue.push(nextSong);
-                State.set('queue', queue);
-                State.set('queueIndex', queue.length - 1);
-
                 if (current.id && nextSong.id) {
                     API.recordTransition(current.id, nextSong.id).catch(() => {});
                 }
-
+                State.set('playbackSource', 'recommendation');
+                State.set('queue', [nextSong]);
+                State.set('queueIndex', 0);
                 this.playTrack(nextSong);
-                UI.showToast(`📻 Auto-Playing Next: ${nextSong.title}`, 'music');
+                UI.showToast(`✨ Next track: ${nextSong.title} (${nextSong.artist_name})`, 'music');
             } else {
-                UI.showToast('End of recommended radio queue.', 'info');
+                // Dynamic discovery fallback: query sibling songs by same artist or genre
+                const fallbackQuery = `${current.artist_name || ''} ${current.genre || ''} hit song`.trim();
+                const searchRes = await API.search(fallbackQuery, 6);
+                if (searchRes && searchRes.results && searchRes.results.length > 0) {
+                    const fallbackTrack = searchRes.results.find(t => t.title !== current.title) || searchRes.results[0];
+                    State.set('playbackSource', 'recommendation');
+                    State.set('queue', [fallbackTrack]);
+                    State.set('queueIndex', 0);
+                    this.playTrack(fallbackTrack);
+                } else {
+                    const trendingRes = await API.getTrending(6);
+                    if (trendingRes && trendingRes.tracks && trendingRes.tracks.length > 0) {
+                        const trTrack = trendingRes.tracks.find(t => t.title !== current.title) || trendingRes.tracks[0];
+                        State.set('playbackSource', 'recommendation');
+                        State.set('queue', [trTrack]);
+                        State.set('queueIndex', 0);
+                        this.playTrack(trTrack);
+                    }
+                }
             }
         } catch (e) {
-            console.warn('Auto-next recommendation failed:', e);
-            UI.showToast('Unable to auto-fetch next track.', 'error');
+            console.warn('Auto-next recommendation error, using fallback:', e);
+            try {
+                const searchRes = await API.search(`${current.artist_name || ''} song`.trim(), 6);
+                if (searchRes && searchRes.results && searchRes.results.length > 0) {
+                    const fallbackTrack = searchRes.results.find(t => t.title !== current.title) || searchRes.results[0];
+                    State.set('playbackSource', 'recommendation');
+                    State.set('queue', [fallbackTrack]);
+                    State.set('queueIndex', 0);
+                    this.playTrack(fallbackTrack);
+                }
+            } catch (fbErr) {
+                console.error("Auto next fallback error:", fbErr);
+            }
         }
     },
 
@@ -675,6 +719,7 @@ const App = {
         const user = State.get('user');
         if (!user) {
             this.openAuthModal('login');
+            UI.showToast('Please sign in or register to add favourites!', 'info');
             return;
         }
         try {
@@ -683,7 +728,16 @@ const App = {
             if (btn) btn.classList.toggle('liked', res.is_favourite);
             UI.showToast(res.is_favourite ? 'Added to Favourites' : 'Removed from Favourites', 'success');
         } catch (e) {
-            UI.showToast(e.message, 'error');
+            if (e.status === 401) {
+                State.set('user', null);
+                localStorage.removeItem('musicwave_auth_user');
+                localStorage.removeItem('musicwave_user_id');
+                this.updateUserUI(null);
+                this.openAuthModal('login');
+                UI.showToast('Please sign in to save favourite songs!', 'info');
+            } else {
+                UI.showToast(e.message, 'error');
+            }
         }
     },
 
@@ -824,7 +878,11 @@ const App = {
             UI.showToast(`Joined ${res.room_name}!`, 'success');
             await this.enterJamRoom(res.room_id);
         } catch (err) {
-            if (errEl) {
+            if (err.status === 401) {
+                this.closeJoinJamModal();
+                this.openAuthModal('login');
+                UI.showToast('Please sign in or register to join Jam rooms!', 'info');
+            } else if (errEl) {
                 errEl.textContent = err.message || 'Failed to join Jam room';
                 errEl.style.display = 'block';
             } else {
@@ -930,14 +988,26 @@ const App = {
         const user = State.get('user');
         if (!user) {
             this.openAuthModal('login');
+            UI.showToast('Please sign in or register to host a Jam room!', 'info');
             return;
         }
         const name = prompt('Enter a name for your Music Jam room:');
-        if (!name) return;
-        API.createJam(name, 'A real-time music jam room').then(res => {
-            UI.showToast(`Jam room "${name}" created!`, 'success');
+        if (!name || !name.trim()) return;
+        API.createJam(name.trim(), 'A real-time music jam room').then(res => {
+            UI.showToast(`Jam room "${name.trim()}" created!`, 'success');
             this.navigateTo('jams');
-        }).catch(err => UI.showToast(err.message, 'error'));
+        }).catch(err => {
+            if (err.status === 401) {
+                State.set('user', null);
+                localStorage.removeItem('musicwave_auth_user');
+                localStorage.removeItem('musicwave_user_id');
+                this.updateUserUI(null);
+                this.openAuthModal('login');
+                UI.showToast('Please sign in to host a Jam room!', 'info');
+            } else {
+                UI.showToast(err.message || 'Failed to create Jam room', 'error');
+            }
+        });
     },
 
     openCreatePlaylistModal() {

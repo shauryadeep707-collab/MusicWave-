@@ -424,12 +424,18 @@ def execute_db(query, args=(), commit=True):
         is_insert = pg_query.strip().upper().startswith('INSERT')
         should_return = is_insert and 'RETURNING' not in pg_query.upper() and 'DO NOTHING' not in pg_query.upper()
         if should_return:
-            pg_query = pg_query.rstrip().rstrip(';') + ' RETURNING id;'
-            cur.execute(pg_query, args)
+            test_query = pg_query.rstrip().rstrip(';') + ' RETURNING id;'
             try:
-                row = cur.fetchone()
-                last_id = row[0] if row else None
+                cur.execute(test_query, args)
+                try:
+                    row = cur.fetchone()
+                    last_id = row[0] if row else None
+                except Exception:
+                    last_id = None
             except Exception:
+                db.rollback()
+                cur = db.cursor()
+                cur.execute(pg_query, args)
                 last_id = None
         else:
             cur.execute(pg_query, args)
