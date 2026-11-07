@@ -23,6 +23,10 @@ def create_app(config_class=Config):
     # Enable CORS
     CORS(app)
 
+    # Enable ProxyFix for reverse proxies (Render / Heroku)
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     # Database teardown registration
     app.teardown_appcontext(close_db)
 

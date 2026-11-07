@@ -458,12 +458,13 @@ const App = {
 
     async checkAuth() {
         try {
-            const cachedUser = localStorage.getItem('musicwave_auth_user');
-            if (cachedUser) {
+            const cachedUserStr = localStorage.getItem('musicwave_auth_user');
+            let cachedUser = null;
+            if (cachedUserStr) {
                 try {
-                    const parsed = JSON.parse(cachedUser);
-                    State.set('user', parsed);
-                    this.updateUserUI(parsed);
+                    cachedUser = JSON.parse(cachedUserStr);
+                    State.set('user', cachedUser);
+                    this.updateUserUI(cachedUser);
                 } catch (e) {}
             }
 
@@ -473,17 +474,12 @@ const App = {
                 this.updateUserUI(res.user);
                 localStorage.setItem('musicwave_auth_user', JSON.stringify(res.user));
                 localStorage.setItem('musicwave_user_id', res.user.id);
-            } else {
-                // If not authenticated or cached user is obsolete, provision fresh clean guest session
-                localStorage.removeItem('musicwave_auth_user');
-                localStorage.removeItem('musicwave_user_id');
+            } else if (!cachedUser || (cachedUser.username && cachedUser.username.startsWith('Guest_'))) {
+                // Only provision new guest if no user or previous user was a guest
                 const guestUser = await API.createGuestSession();
                 if (guestUser) {
                     State.set('user', guestUser);
                     this.updateUserUI(guestUser);
-                } else {
-                    State.set('user', null);
-                    this.updateUserUI(null);
                 }
             }
         } catch (e) {
