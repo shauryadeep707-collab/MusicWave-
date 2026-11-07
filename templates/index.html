@@ -17,8 +17,9 @@
     <link rel="stylesheet" href="/static/css/components.css">
     <link rel="stylesheet" href="/static/css/player.css">
 
-    <!-- Socket.IO Client -->
+    <!-- Socket.IO & YouTube IFrame Player API -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
     <div id="app-container">
@@ -130,11 +131,17 @@
                 <div class="topbar-left">
                     <div class="search-bar-wrapper">
                         <svg class="search-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input type="text" id="global-search-input" class="search-input" placeholder="Search songs, artists, genres, or Jams..." autocomplete="off">
+                        <input type="text" id="global-search-input" class="search-input" placeholder="Search songs, artists, genres, or paste any YouTube link..." autocomplete="off">
                     </div>
                 </div>
 
                 <div class="topbar-right">
+                    <!-- Quick Paste YouTube Link Button -->
+                    <button class="btn-secondary" style="font-size: 0.82rem; padding: 6px 14px; gap: 8px; border-color: rgba(239, 68, 68, 0.4);" onclick="App.openYouTubeModal()">
+                        <svg width="16" height="16" fill="#ef4444" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                        <span>Paste YouTube</span>
+                    </button>
+
                     <!-- Online / Offline Connectivity Indicator -->
                     <div class="status-pill" id="online-status-pill">
                         <span class="status-indicator-dot"></span>
@@ -216,6 +223,37 @@
                 </div>
             </div>
         </footer>
+    </div>
+
+    <!-- Hidden YouTube Player Container -->
+    <div id="youtube-player-container" style="position: fixed; bottom: -600px; left: -600px; width: 240px; height: 240px; opacity: 0; pointer-events: none;">
+        <div id="youtube-iframe-player"></div>
+    </div>
+
+    <!-- ==============================================
+         YOUTUBE IMPORT MODAL
+         ============================================== -->
+    <div class="modal-overlay" id="youtube-modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="20" height="20" fill="#ef4444" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                    Play from YouTube
+                </h3>
+                <button class="icon-btn" onclick="App.closeYouTubeModal()">✕</button>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px;">
+                Paste any YouTube song link, music video, or shorts URL to play it directly inside MusicWave:
+            </p>
+            <form onsubmit="App.handleYouTubeImport(event)">
+                <div style="margin-bottom: 20px;">
+                    <input type="text" id="youtube-link-input" required style="width: 100%; padding: 12px 14px;" placeholder="https://www.youtube.com/watch?v=...">
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem;">
+                    Load & Play Song
+                </button>
+            </form>
+        </div>
     </div>
 
     <!-- ==============================================

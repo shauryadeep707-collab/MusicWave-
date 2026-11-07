@@ -73,6 +73,12 @@ const API = {
     search(query) {
         return this.request(`/api/music/search?q=${encodeURIComponent(query)}`);
     },
+    importYouTube(urlOrId) {
+        return this.request('/api/music/youtube/import', {
+            method: 'POST',
+            body: { url: urlOrId }
+        });
+    },
 
     // Playlists
     getPlaylists() {

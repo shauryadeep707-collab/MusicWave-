@@ -296,7 +296,8 @@ def seed_common_data(db, is_pg=False):
         ("jamendo", "Jamendo Music", "Free, legal CC-licensed music from independent artists worldwide.", True, True, True, True, "https://api.jamendo.com/v3.0", "https://www.jamendo.com"),
         ("internet_archive", "Internet Archive", "Non-profit library of millions of free books, movies, software, music, and audio.", True, True, True, True, "https://archive.org/advancedsearch.php", "https://archive.org"),
         ("freemusicarchive", "Free Music Archive", "Openly licensed independent music curation.", True, True, True, True, "https://freemusicarchive.org/api", "https://freemusicarchive.org"),
-        ("local", "MusicWave Local Vault", "Platform-verified royalty-free & admin-uploaded high fidelity tracks.", True, True, True, True, "/api/music/local", "")
+        ("local", "MusicWave Local Vault", "Platform-verified royalty-free & admin-uploaded high fidelity tracks.", True, True, True, True, "/api/music/local", ""),
+        ("youtube", "YouTube Music", "Direct YouTube audio playback and universal public search.", True, True, False, True, "https://www.youtube.com", "https://www.youtube.com")
     ]
     
     if is_pg:
@@ -393,10 +394,15 @@ def execute_db(query, args=(), commit=True):
         pg_query = query.replace('?', '%s')
         # If insert, append RETURNING id to get lastrowid
         is_insert = pg_query.strip().upper().startswith('INSERT')
-        if is_insert and 'RETURNING' not in pg_query.upper():
-            pg_query = pg_query.rstrip(';') + ' RETURNING id;'
+        should_return = is_insert and 'RETURNING' not in pg_query.upper() and 'DO NOTHING' not in pg_query.upper()
+        if should_return:
+            pg_query = pg_query.rstrip().rstrip(';') + ' RETURNING id;'
             cur.execute(pg_query, args)
-            last_id = cur.fetchone()[0]
+            try:
+                row = cur.fetchone()
+                last_id = row[0] if row else None
+            except Exception:
+                last_id = None
         else:
             cur.execute(pg_query, args)
             last_id = None

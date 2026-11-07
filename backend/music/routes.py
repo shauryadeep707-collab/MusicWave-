@@ -36,6 +36,20 @@ def search_tracks():
     tracks = music_service.search(q, limit=limit)
     return jsonify({'results': tracks, 'query': q}), 200
 
+@music_bp.route('/youtube/import', methods=['POST'])
+def import_youtube_track():
+    """Import any YouTube music track by link or video ID."""
+    data = request.get_json() or {}
+    url_or_id = data.get('url') or data.get('id') or ''
+    if not url_or_id:
+        return jsonify({'error': 'YouTube URL or video ID is required'}), 400
+
+    track = music_service.import_youtube(url_or_id)
+    if not track:
+        return jsonify({'error': 'Could not extract metadata for this YouTube link. Please ensure it is a valid public video.'}), 404
+
+    return jsonify({'message': 'YouTube track imported successfully', 'track': track}), 200
+
 @music_bp.route('/genre/<genre_name>', methods=['GET'])
 def get_tracks_by_genre(genre_name):
     """Retrieve tracks for a given genre category."""

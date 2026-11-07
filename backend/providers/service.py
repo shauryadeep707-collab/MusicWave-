@@ -4,17 +4,20 @@ from .base import UnifiedTrack
 from .internet_archive import InternetArchiveProvider
 from .jamendo import JamendoProvider
 from .local_vault import LocalVaultProvider
+from .youtube import YouTubeProvider
 
 class MusicService:
     """
     Unified Music Service: Aggregates multiple external music providers,
-    synchronizes tracks with the database cache, and ensures high availability.
+    supports direct YouTube link import, synchronizes tracks with the database cache,
+    and ensures high availability.
     """
     def __init__(self):
         self.providers = {
             'local': LocalVaultProvider(),
             'internet_archive': InternetArchiveProvider(),
-            'jamendo': JamendoProvider()
+            'jamendo': JamendoProvider(),
+            'youtube': YouTubeProvider()
         }
 
     def _persist_tracks(self, tracks: List[UnifiedTrack]) -> List[Dict[str, Any]]:
@@ -76,11 +79,29 @@ class MusicService:
 
         return persisted
 
+    def import_youtube(self, url_or_id: str) -> Optional[Dict[str, Any]]:
+        """Directly import any YouTube song by link or ID."""
+        yt_provider: YouTubeProvider = self.providers.get('youtube')
+        if not yt_provider:
+            return None
+        track = yt_provider.fetch_track(url_or_id)
+        if not track:
+            return None
+        persisted_list = self._persist_tracks([track])
+        return persisted_list[0] if persisted_list else track.to_dict()
+
     def search(self, query: str, limit: int = 25) -> List[Dict[str, Any]]:
-        """Search across local vault, database cache, and live external providers."""
+        """Search across local cache, YouTube links, and live external providers."""
         query = query.strip()
         if not query:
             return []
+
+        # Check if query is a direct YouTube link or ID
+        yt_provider: YouTubeProvider = self.providers.get('youtube')
+        if yt_provider and yt_provider.extract_id(query):
+            yt_track = self.import_youtube(query)
+            if yt_track:
+                return [yt_track]
 
         # 1. Search existing local database cache first
         pattern = f"%{query}%"
@@ -93,12 +114,14 @@ class MusicService:
 
         # 2. Query active providers in parallel/sequence
         provider_tracks = []
-        for pid, provider in self.providers.items():
-            try:
-                tracks = provider.search(query, limit=10)
-                provider_tracks.extend(tracks)
-            except Exception as e:
-                print(f"[Provider '{pid}' search failed]: {e}")
+        for pid in ['local', 'youtube', 'internet_archive', 'jamendo']:
+            provider = self.providers.get(pid)
+            if provider:
+                try:
+                    tracks = provider.search(query, limit=10)
+                    provider_tracks.extend(tracks)
+                except Exception as e:
+                    print(f"[Provider '{pid}' search failed]: {e}")
 
         # Persist newly discovered tracks
         newly_persisted = self._persist_tracks(provider_tracks)
@@ -119,12 +142,14 @@ class MusicService:
     def get_trending(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Retrieve trending songs across all open legal music providers."""
         provider_tracks = []
-        for pid, provider in self.providers.items():
-            try:
-                tracks = provider.get_trending(limit=10)
-                provider_tracks.extend(tracks)
-            except Exception as e:
-                print(f"[Provider '{pid}' trending failed]: {e}")
+        for pid in ['local', 'youtube', 'internet_archive', 'jamendo']:
+            provider = self.providers.get(pid)
+            if provider:
+                try:
+                    tracks = provider.get_trending(limit=10)
+                    provider_tracks.extend(tracks)
+                except Exception as e:
+                    print(f"[Provider '{pid}' trending failed]: {e}")
 
         persisted = self._persist_tracks(provider_tracks)
 
@@ -144,21 +169,21 @@ class MusicService:
 
     def get_by_genre(self, genre: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Retrieve tracks filtered by a specific music genre."""
-        # Check cache
         pattern = f"%{genre}%"
         cached = query_db("SELECT * FROM tracks WHERE genre LIKE ? LIMIT ?", (pattern, limit))
         
         if len(cached) >= limit:
             return cached
 
-        # Fetch more from providers
         provider_tracks = []
-        for pid, provider in self.providers.items():
-            try:
-                tracks = provider.get_by_genre(genre, limit=8)
-                provider_tracks.extend(tracks)
-            except Exception as e:
-                pass
+        for pid in ['local', 'youtube', 'internet_archive', 'jamendo']:
+            provider = self.providers.get(pid)
+            if provider:
+                try:
+                    tracks = provider.get_by_genre(genre, limit=8)
+                    provider_tracks.extend(tracks)
+                except Exception as e:
+                    pass
 
         persisted = self._persist_tracks(provider_tracks)
         seen = set()

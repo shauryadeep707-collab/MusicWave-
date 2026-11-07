@@ -1,13 +1,17 @@
 /**
  * MusicWave - Main Client Application Bootstrap & Controller
+ * Supports dual audio engines: HTML5 Audio API (for MP3/FLAC) & YouTube IFrame API
  */
 const App = {
     audio: new Audio(),
+    ytPlayer: null,
+    isYtReady: false,
+    ytProgressTimer: null,
 
     async init() {
         console.log("🎵 MusicWave Engine Initializing...");
         
-        // Setup Audio Player Event Listeners
+        // Setup Native Audio Player Event Listeners
         this.setupAudioListeners();
 
         // Setup Network Status Listeners
@@ -19,11 +23,84 @@ const App = {
         // Setup Global DOM Listeners
         this.setupDOMListeners();
 
+        // Setup YouTube Player
+        this.initYouTubePlayer();
+
         // Check current session
         await this.checkAuth();
 
         // Initial Routing based on path
         this.handleInitialRoute();
+    },
+
+    initYouTubePlayer() {
+        const checkYT = () => {
+            if (window.YT && window.YT.Player) {
+                this.ytPlayer = new window.YT.Player('youtube-iframe-player', {
+                    height: '200',
+                    width: '200',
+                    playerVars: {
+                        'autoplay': 0,
+                        'controls': 0,
+                        'disablekb': 1,
+                        'fs': 0,
+                        'rel': 0
+                    },
+                    events: {
+                        'onReady': () => {
+                            this.isYtReady = true;
+                            console.log("▶️ YouTube Embedded Audio Engine Ready");
+                        },
+                        'onStateChange': (e) => this.onYouTubeStateChange(e)
+                    }
+                });
+            } else {
+                setTimeout(checkYT, 200);
+            }
+        };
+        checkYT();
+    },
+
+    onYouTubeStateChange(event) {
+        // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0
+        if (event.data === 1) {
+            State.set('isPlaying', true);
+            this.startYtProgressTracker();
+        } else if (event.data === 2) {
+            State.set('isPlaying', false);
+            this.stopYtProgressTracker();
+        } else if (event.data === 0) {
+            this.stopYtProgressTracker();
+            const repeatMode = State.get('repeatMode');
+            if (repeatMode === 'one' && this.ytPlayer) {
+                this.ytPlayer.seekTo(0);
+                this.ytPlayer.playVideo();
+            } else {
+                this.nextTrack();
+            }
+        }
+    },
+
+    startYtProgressTracker() {
+        this.stopYtProgressTracker();
+        this.ytProgressTimer = setInterval(() => {
+            if (this.ytPlayer && this.ytPlayer.getCurrentTime && this.ytPlayer.getDuration) {
+                const current = this.ytPlayer.getCurrentTime();
+                const duration = this.ytPlayer.getDuration();
+                State.set('currentTime', current);
+                State.set('duration', duration);
+                this.updateProgressBar(current, duration);
+                const totalEl = document.getElementById('player-total-time');
+                if (totalEl && duration) totalEl.textContent = UI.formatTime(duration);
+            }
+        }, 500);
+    },
+
+    stopYtProgressTracker() {
+        if (this.ytProgressTimer) {
+            clearInterval(this.ytProgressTimer);
+            this.ytProgressTimer = null;
+        }
     },
 
     setupAudioListeners() {
@@ -38,14 +115,18 @@ const App = {
         });
 
         audio.addEventListener('timeupdate', () => {
-            State.set('currentTime', audio.currentTime);
-            this.updateProgressBar(audio.currentTime, audio.duration);
+            if (State.get('currentTrack')?.provider_id !== 'youtube') {
+                State.set('currentTime', audio.currentTime);
+                this.updateProgressBar(audio.currentTime, audio.duration);
+            }
         });
 
         audio.addEventListener('loadedmetadata', () => {
-            State.set('duration', audio.duration);
-            const totalEl = document.getElementById('player-total-time');
-            if (totalEl) totalEl.textContent = UI.formatTime(audio.duration);
+            if (State.get('currentTrack')?.provider_id !== 'youtube') {
+                State.set('duration', audio.duration);
+                const totalEl = document.getElementById('player-total-time');
+                if (totalEl) totalEl.textContent = UI.formatTime(audio.duration);
+            }
         });
 
         audio.addEventListener('ended', () => {
@@ -60,8 +141,10 @@ const App = {
 
         audio.addEventListener('error', (e) => {
             console.error('Audio playback error:', e);
-            UI.showToast('Unable to stream this audio source. Skipping to next...', 'error');
-            setTimeout(() => this.nextTrack(), 1500);
+            if (State.get('currentTrack')?.provider_id !== 'youtube') {
+                UI.showToast('Audio source unavailable. Skipping...', 'error');
+                setTimeout(() => this.nextTrack(), 1500);
+            }
         });
     },
 
@@ -78,7 +161,7 @@ const App = {
                 } else {
                     pill.className = 'status-pill offline';
                     pill.innerHTML = '<span class="status-indicator-dot"></span> Offline';
-                    UI.showToast('You are offline. Switching to local downloads.', 'error');
+                    UI.showToast('Offline Mode. Accessing local downloads.', 'error');
                 }
             }
         };
@@ -122,17 +205,13 @@ const App = {
         // Repeat mode
         State.subscribe('repeatMode', (mode) => {
             const btn = document.getElementById('player-repeat-btn');
-            if (btn) {
-                btn.classList.toggle('active', mode !== 'off');
-            }
+            if (btn) btn.classList.toggle('active', mode !== 'off');
         });
 
         // Shuffle
         State.subscribe('shuffle', (shuffle) => {
             const btn = document.getElementById('player-shuffle-btn');
-            if (btn) {
-                btn.classList.toggle('active', shuffle);
-            }
+            if (btn) btn.classList.toggle('active', shuffle);
         });
     },
 
@@ -167,7 +246,12 @@ const App = {
             progressContainer.addEventListener('click', (e) => {
                 const rect = progressContainer.getBoundingClientRect();
                 const pos = (e.clientX - rect.left) / rect.width;
-                if (this.audio.duration) {
+                const track = State.get('currentTrack');
+
+                if (track?.provider_id === 'youtube' && this.ytPlayer && this.ytPlayer.seekTo) {
+                    const dur = this.ytPlayer.getDuration() || 0;
+                    this.ytPlayer.seekTo(pos * dur, true);
+                } else if (this.audio.duration) {
                     this.audio.currentTime = pos * this.audio.duration;
                 }
             });
@@ -179,6 +263,9 @@ const App = {
             volumeSlider.addEventListener('input', (e) => {
                 const vol = parseFloat(e.target.value);
                 this.audio.volume = vol;
+                if (this.ytPlayer && this.ytPlayer.setVolume) {
+                    this.ytPlayer.setVolume(vol * 100);
+                }
                 State.set('volume', vol);
             });
         }
@@ -267,37 +354,74 @@ const App = {
         }
     },
 
-    // Audio Playback Controls
+    // Audio Playback Controls (Unified Native MP3 & YouTube)
     playTrack(track) {
-        if (!track || !track.stream_url) {
-            UI.showToast('Invalid audio stream for this track', 'error');
+        if (!track) {
+            UI.showToast('Invalid track selection', 'error');
             return;
         }
 
         State.set('currentTrack', track);
+
+        // 1. YouTube Playback Engine
+        if (track.provider_id === 'youtube') {
+            this.audio.pause();
+            const videoId = track.provider_track_id || track.stream_url;
+            if (this.ytPlayer && this.ytPlayer.loadVideoById) {
+                this.ytPlayer.loadVideoById(videoId);
+                this.ytPlayer.playVideo();
+                State.set('isPlaying', true);
+                UI.showToast(`Playing from YouTube: ${track.title}`, 'music');
+                if (track.id) API.recordPlay(track.id).catch(() => {});
+            } else {
+                UI.showToast('YouTube player is preparing, please try again in a second', 'info');
+            }
+            return;
+        }
+
+        // 2. Native HTML5 Audio Engine
+        if (this.ytPlayer && this.ytPlayer.stopVideo) {
+            this.ytPlayer.stopVideo();
+            this.stopYtProgressTracker();
+        }
+
+        if (!track.stream_url) {
+            UI.showToast('No audio stream URL available for this track', 'error');
+            return;
+        }
+
         this.audio.src = track.stream_url;
         this.audio.play().then(() => {
             State.set('isPlaying', true);
             UI.showToast(`Playing: ${track.title}`, 'music');
-            if (track.id) {
-                API.recordPlay(track.id).catch(() => {});
-            }
+            if (track.id) API.recordPlay(track.id).catch(() => {});
         }).catch(err => {
-            console.error('Autoplay prevented or stream error:', err);
+            console.error('Playback prevented or stream error:', err);
             UI.showToast('Click play on player to start listening', 'info');
         });
     },
 
     togglePlay() {
-        if (!State.get('currentTrack')) {
+        const track = State.get('currentTrack');
+        if (!track) {
             UI.showToast('Select a track to start playing', 'info');
             return;
         }
 
-        if (this.audio.paused) {
-            this.audio.play();
+        if (track.provider_id === 'youtube') {
+            if (!this.ytPlayer) return;
+            const ytState = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
+            if (ytState === 1) {
+                this.ytPlayer.pauseVideo();
+            } else {
+                this.ytPlayer.playVideo();
+            }
         } else {
-            this.audio.pause();
+            if (this.audio.paused) {
+                this.audio.play();
+            } else {
+                this.audio.pause();
+            }
         }
     },
 
@@ -355,6 +479,39 @@ const App = {
 
     browseGenre(genre) {
         this.navigateTo('search', genre);
+    },
+
+    // YouTube Import Modal
+    openYouTubeModal() {
+        const overlay = document.getElementById('youtube-modal-overlay');
+        if (overlay) overlay.classList.add('active');
+        const input = document.getElementById('youtube-link-input');
+        if (input) {
+            input.value = '';
+            input.focus();
+        }
+    },
+
+    closeYouTubeModal() {
+        const overlay = document.getElementById('youtube-modal-overlay');
+        if (overlay) overlay.classList.remove('active');
+    },
+
+    async handleYouTubeImport(e) {
+        e.preventDefault();
+        const input = document.getElementById('youtube-link-input');
+        const link = input.value.trim();
+        if (!link) return;
+
+        UI.showToast('Fetching YouTube track information...', 'info');
+        try {
+            const res = await API.importYouTube(link);
+            this.closeYouTubeModal();
+            UI.showToast(`Imported: ${res.track.title}`, 'success');
+            this.playTrack(res.track);
+        } catch (err) {
+            UI.showToast(err.message, 'error');
+        }
     },
 
     // Modal Operations
