@@ -49,10 +49,13 @@ def close_db(e=None):
 def init_db(app):
     """Initialize database tables and initial seed data."""
     with app.app_context():
-        if is_postgres():
-            init_postgres_db()
-        else:
-            init_sqlite_db()
+        try:
+            if is_postgres():
+                init_postgres_db()
+            else:
+                init_sqlite_db()
+        except Exception as e:
+            print(f"[Database Error during init_db]: {e}")
 
 def init_sqlite_db():
     db = get_db()
@@ -330,8 +333,8 @@ def seed_common_data(db, is_pg=False):
         else:
             cur.execute("""
                 INSERT INTO users (username, email, password_hash, role)
-                VALUES (?, 'admin@musicwave.io', ?, 'admin')
-            """, (admin_pwd,))
+                VALUES (?, ?, ?, ?)
+            """, ('admin', 'admin@musicwave.io', admin_pwd, 'admin'))
             admin_id = cur.lastrowid
             cur.execute("""
                 INSERT INTO user_profiles (user_id, display_name, bio, avatar_url)
