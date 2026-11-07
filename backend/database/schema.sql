@@ -207,6 +207,8 @@ CREATE TABLE IF NOT EXISTS jam_rooms (
     cover_url TEXT DEFAULT '/static/images/default-jam.png',
     is_public BOOLEAN DEFAULT 1,
     password_hash VARCHAR(255),
+    join_code VARCHAR(10),
+    code_expires_at TIMESTAMP,
     max_participants INTEGER DEFAULT 20,
     allow_guest_queue BOOLEAN DEFAULT 1,
     allow_guest_vote BOOLEAN DEFAULT 1,

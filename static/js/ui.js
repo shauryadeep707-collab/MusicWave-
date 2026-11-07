@@ -580,20 +580,36 @@ const UI = {
                     <h1 class="section-title">Music Jams</h1>
                     <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">Listen to synchronized music together with friends in real-time rooms.</p>
                 </div>
-                <button class="btn-primary" onclick="App.openCreateJamModal()">+ Create Jam</button>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-secondary" onclick="App.openJoinJamModal()">🔑 Join with Code / ID</button>
+                    <button class="btn-primary" onclick="App.openCreateJamModal()">+ Host a Jam</button>
+                </div>
             </div>
-            <div class="grid-cards" id="jams-page-grid" style="margin-top: 24px;">
+
+            <!-- Join by Code Banner -->
+            <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(22, 21, 35, 0.9) 100%); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: var(--radius-lg); padding: 22px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                <div>
+                    <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 4px;">Have a 4-Digit Join Code?</h3>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem;">Enter the host's 4-digit code to instantly join their listening room before it expires.</p>
+                </div>
+                <button class="btn-primary" style="padding: 8px 20px; font-size: 0.88rem;" onclick="App.openJoinJamModal()">Enter 4-Digit Code</button>
+            </div>
+
+            <h2 class="section-title" style="font-size: 1.15rem; margin-bottom: 16px;">Active Listening Parties</h2>
+            <div class="grid-cards" id="jams-page-grid">
                 <div style="color: var(--text-muted); padding: 20px;">Fetching active rooms...</div>
             </div>
         `;
+
         API.getJams().then(res => {
             const grid = document.getElementById('jams-page-grid');
             if (!grid) return;
             if (res.jams && res.jams.length > 0) {
                 grid.innerHTML = res.jams.map(j => `
-                    <div class="music-card" onclick="App.joinJam('${j.id}')">
+                    <div class="music-card" onclick="App.enterJamRoom('${j.id}')">
                         <div class="music-card-cover-wrapper">
                             <img src="${j.cover_url || '/static/images/default-jam.png'}" class="music-card-cover" alt="${j.name}"/>
+                            <span class="version-badge official-badge" style="top: 8px; left: 8px;">🔑 ${j.join_code ? j.join_code : 'Open'}</span>
                             <div class="music-card-play-overlay">
                                 <div class="play-circle-btn">
                                     <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -613,6 +629,108 @@ const UI = {
                 `;
             }
         });
+    },
+
+    // Render Jam Room Live Detail View (Synchronized Playback & 4-Digit Code)
+    renderJamRoom(data) {
+        const container = document.getElementById('main-content');
+        const room = data.room;
+        const isHost = data.is_host;
+        const currentTrack = data.current_track;
+        const participants = data.participants || [];
+        const isExpired = data.is_code_expired;
+        const remSec = data.remaining_seconds || 0;
+
+        container.innerHTML = `
+            <div class="section-header">
+                <div>
+                    <span class="badge" style="background: rgba(139, 92, 246, 0.25); color: var(--primary);">
+                        ${isHost ? '👑 You are the Jam Host' : '🎧 Joined as Listener'}
+                    </span>
+                    <h1 class="section-title" style="font-size: 2rem; margin-top: 6px;">${room.name}</h1>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem;">${room.description || 'Synchronized music jam party'}</p>
+                </div>
+                <button class="btn-secondary" onclick="App.leaveCurrentJam('${room.id}')">← Leave Jam</button>
+            </div>
+
+            <!-- 4-Digit Join Code Box with Live Countdown -->
+            <div class="jam-code-box">
+                <div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 4px;">
+                        Room ID: <strong style="color: var(--text-primary);">${room.id}</strong>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                        <div>
+                            <span style="font-size: 0.82rem; color: var(--text-secondary);">4-Digit Join Code:</span>
+                            <div class="jam-code-digits" id="jam-room-code-display">${room.join_code || '----'}</div>
+                        </div>
+                        <div>
+                            <div id="jam-code-timer-badge" class="jam-timer-badge ${isExpired ? 'expired' : ''}">
+                                ${isExpired ? '⚠️ Code Expired (10 min passed)' : `⏱ Expires in: <span id="jam-countdown-text">${UI.formatTime(remSec)}</span>`}
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
+                                Codes expire every 10 min for room security
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Host Settings & Regeneration -->
+                ${isHost ? `
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <button class="btn-primary" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);" onclick="App.regenerateJamCode('${room.id}')">
+                            🔄 Generate New 4-Digit Code
+                        </button>
+                        <span style="font-size: 0.72rem; color: var(--text-muted); text-align: center;">Jam Settings • Host Control</span>
+                    </div>
+                ` : `
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">
+                        ${isExpired ? 'Please ask the host to renew the code in Jam Settings.' : 'Share this 4-digit code with friends to let them join.'}
+                    </div>
+                `}
+            </div>
+
+            <!-- Jam Room Workspace -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+                <!-- Left: Now Playing in Jam -->
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px;">
+                    <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 16px;">Now Playing in Jam</h3>
+                    ${currentTrack ? `
+                        <div style="display: flex; align-items: center; gap: 20px;">
+                            <img src="${currentTrack.artwork_url || '/static/images/default-cover.png'}" style="width: 100px; height: 100px; border-radius: var(--radius-md); object-fit: cover;" />
+                            <div>
+                                <h4 style="font-size: 1.2rem; font-weight: 700;">${currentTrack.title}</h4>
+                                <p style="color: var(--text-secondary); margin-top: 4px;">${currentTrack.artist_name}</p>
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; margin-top: 8px;">● Live Synchronized</span>
+                            </div>
+                        </div>
+                    ` : `
+                        <div style="padding: 30px; text-align: center; color: var(--text-secondary);">
+                            No track is playing right now.
+                            ${isHost ? '<p style="margin-top: 10px;"><button class="btn-primary" onclick="App.navigateTo(\'search\')">Search & Play Song</button></p>' : ''}
+                        </div>
+                    `}
+                </div>
+
+                <!-- Right: Active Listeners -->
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px;">
+                    <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 16px;">Listeners (${participants.length})</h3>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        ${participants.map(p => `
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div class="user-avatar-sm" style="width: 32px; height: 32px; font-size: 0.8rem;">
+                                    ${p.username ? p.username.charAt(0).toUpperCase() : 'U'}
+                                </div>
+                                <span style="font-size: 0.88rem; font-weight: 600;">${p.display_name || p.username}</span>
+                                ${p.is_host ? '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); font-size: 0.65rem; margin-left: auto;">👑 Host</span>' : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        App.startJamCountdown(remSec, isHost, room.id);
     },
 
     // Render Friends View

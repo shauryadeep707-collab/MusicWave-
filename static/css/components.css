@@ -669,3 +669,62 @@
     font-size: 0.85rem;
     flex-shrink: 0;
 }
+
+
+/* ----------------------------------------------------
+   Music Jam 4-Digit Code & Expiry UI
+---------------------------------------------------- */
+.jam-code-box {
+    background: rgba(139, 92, 246, 0.12);
+    border: 1px dashed var(--primary);
+    border-radius: var(--radius-lg);
+    padding: 18px 24px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.jam-code-digits {
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: 6px;
+    color: var(--primary-light);
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.35);
+    padding: 6px 18px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    user-select: all;
+}
+
+.jam-timer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.jam-timer-badge.expired {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.jam-modal-code-input {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: 8px;
+    text-align: center;
+    text-transform: uppercase;
+    font-family: monospace;
+    height: 60px;
+}

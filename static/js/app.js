@@ -694,6 +694,118 @@ const App = {
         UI.showToast('You have been logged out.', 'info');
     },
 
+    jamTimer: null,
+
+    openJoinJamModal() {
+        const overlay = document.getElementById('join-jam-modal-overlay');
+        const input = document.getElementById('join-jam-input');
+        const err = document.getElementById('join-jam-error-msg');
+        if (err) err.style.display = 'none';
+        if (input) {
+            input.value = '';
+            input.focus();
+        }
+        if (overlay) overlay.classList.add('active');
+    },
+
+    closeJoinJamModal() {
+        const overlay = document.getElementById('join-jam-modal-overlay');
+        if (overlay) overlay.classList.remove('active');
+    },
+
+    async handleJoinJamSubmit(e) {
+        e.preventDefault();
+        const input = document.getElementById('join-jam-input');
+        const errEl = document.getElementById('join-jam-error-msg');
+        const codeOrId = input ? input.value.trim() : '';
+        if (!codeOrId) return;
+
+        try {
+            UI.showToast('Connecting to Music Jam...', 'info');
+            const res = await API.joinJam(codeOrId);
+            this.closeJoinJamModal();
+            UI.showToast(`Joined ${res.room_name}!`, 'success');
+            await this.enterJamRoom(res.room_id);
+        } catch (err) {
+            if (errEl) {
+                errEl.textContent = err.message || 'Failed to join Jam room';
+                errEl.style.display = 'block';
+            } else {
+                UI.showToast(err.message || 'Failed to join Jam room', 'error');
+            }
+        }
+    },
+
+    async enterJamRoom(roomId) {
+        try {
+            const data = await API.getJamRoom(roomId);
+            State.set('activeJamRoom', data.room);
+            UI.renderJamRoom(data);
+        } catch (err) {
+            UI.showToast(err.message || 'Failed to load Jam room', 'error');
+        }
+    },
+
+    async regenerateJamCode(roomId) {
+        try {
+            UI.showToast('Generating fresh 4-digit code...', 'info');
+            const res = await API.regenerateJamCode(roomId);
+            const codeDisplay = document.getElementById('jam-room-code-display');
+            if (codeDisplay) codeDisplay.textContent = res.join_code;
+
+            UI.showToast(`New code: ${res.join_code} (valid for 10 min)`, 'success');
+            this.startJamCountdown(600, true, roomId);
+        } catch (err) {
+            UI.showToast(err.message || 'Only host can generate new code', 'error');
+        }
+    },
+
+    startJamCountdown(remSec, isHost, roomId) {
+        if (this.jamTimer) {
+            clearInterval(this.jamTimer);
+            this.jamTimer = null;
+        }
+
+        let seconds = remSec;
+        const updateUI = () => {
+            const timerBadge = document.getElementById('jam-code-timer-badge');
+            const countdownText = document.getElementById('jam-countdown-text');
+            if (!timerBadge) {
+                clearInterval(this.jamTimer);
+                return;
+            }
+
+            if (seconds <= 0) {
+                timerBadge.className = 'jam-timer-badge expired';
+                timerBadge.innerHTML = '⚠️ Code Expired (10 min passed)';
+                clearInterval(this.jamTimer);
+                if (isHost) {
+                    UI.showToast('Your 4-digit Jam code has expired. Click "Generate New 4-Digit Code" to renew it.', 'info');
+                }
+            } else {
+                timerBadge.className = 'jam-timer-badge';
+                if (countdownText) countdownText.textContent = UI.formatTime(seconds);
+                seconds--;
+            }
+        };
+
+        updateUI();
+        if (seconds > 0) {
+            this.jamTimer = setInterval(updateUI, 1000);
+        }
+    },
+
+    async leaveCurrentJam(roomId) {
+        if (this.jamTimer) {
+            clearInterval(this.jamTimer);
+            this.jamTimer = null;
+        }
+        await API.leaveJam(roomId).catch(() => {});
+        State.set('activeJamRoom', null);
+        UI.showToast('Left Jam party.', 'info');
+        this.navigateTo('jams');
+    },
+
     openCreateJamModal() {
         const user = State.get('user');
         if (!user) {

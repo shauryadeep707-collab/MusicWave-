@@ -181,6 +181,28 @@ const API = {
     getJamRoom(roomId) {
         return this.request(`/api/jams/${roomId}`);
     },
+    joinJam(codeOrId) {
+        return this.request('/api/jams/join', {
+            method: 'POST',
+            body: { code_or_id: codeOrId }
+        });
+    },
+    regenerateJamCode(roomId) {
+        return this.request(`/api/jams/${roomId}/regenerate-code`, {
+            method: 'POST'
+        });
+    },
+    leaveJam(roomId) {
+        return this.request(`/api/jams/${roomId}/leave`, {
+            method: 'POST'
+        });
+    },
+    syncJamPlayback(roomId, trackId, playbackStatus = 'playing', position = 0) {
+        return this.request(`/api/jams/${roomId}/sync`, {
+            method: 'POST',
+            body: { track_id: trackId, playback_status: playbackStatus, playback_position: position }
+        });
+    },
 
     // Friends
     getFriends() {

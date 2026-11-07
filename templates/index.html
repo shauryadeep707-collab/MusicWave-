@@ -259,6 +259,35 @@
     </div>
 
     <!-- ==============================================
+         JOIN JAM MODAL (4-Digit Code & Room ID)
+         ============================================== -->
+    <div class="modal-overlay" id="join-jam-modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span>🔑 Join Music Jam</span>
+                </h3>
+                <button class="icon-btn" onclick="App.closeJoinJamModal()">✕</button>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px;">
+                Enter the host's <strong>4-digit code</strong> (e.g. <code>4829</code>) or the <strong>Room ID</strong> to join their synchronized listening party:
+            </p>
+            <form onsubmit="App.handleJoinJamSubmit(event)">
+                <div style="margin-bottom: 14px;">
+                    <input type="text" id="join-jam-input" class="form-input jam-modal-code-input" placeholder="4 8 2 9" maxlength="32" required autocomplete="off" />
+                </div>
+                <div id="join-jam-error-msg" style="color: var(--accent-rose); font-size: 0.84rem; margin-bottom: 14px; display: none;"></div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 18px; text-align: center;">
+                    ⏱ 4-digit codes expire every 10 minutes for room security.
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem;">
+                    Join Jam Room
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==============================================
          AUTH MODAL
          ============================================== -->
     <div class="modal-overlay" id="auth-modal-overlay">

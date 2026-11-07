@@ -210,6 +210,8 @@ def init_postgres_db():
             max_participants INTEGER DEFAULT 20,
             allow_guest_queue BOOLEAN DEFAULT TRUE,
             allow_guest_vote BOOLEAN DEFAULT TRUE,
+            join_code VARCHAR(10),
+            code_expires_at TIMESTAMP,
             current_track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
             playback_status VARCHAR(20) DEFAULT 'paused',
             playback_position REAL DEFAULT 0.0,
