@@ -420,10 +420,14 @@ def execute_db(query, args=(), commit=True):
         pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*0\b', r'\1 = FALSE', pg_query)
         pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*1\b', r'\1 = TRUE', pg_query)
         pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*0\b', r'\1 = FALSE', pg_query)
-        # If insert, append RETURNING id to get lastrowid
+        # If insert, append RETURNING id to get lastrowid if table has id column
         is_insert = pg_query.strip().upper().startswith('INSERT')
-        should_return = is_insert and 'RETURNING' not in pg_query.upper() and 'DO NOTHING' not in pg_query.upper()
-        if should_return:
+        has_returning = 'RETURNING' in pg_query.upper()
+        has_do_nothing = 'DO NOTHING' in pg_query.upper()
+        no_id_tables = ['user_profiles', 'user_settings']
+        is_no_id_table = any(t in pg_query.lower() for t in no_id_tables)
+
+        if is_insert and not has_returning and not has_do_nothing and not is_no_id_table:
             test_query = pg_query.rstrip().rstrip(';') + ' RETURNING id;'
             try:
                 cur.execute(test_query, args)

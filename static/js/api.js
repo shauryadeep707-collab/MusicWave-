@@ -23,7 +23,13 @@ const API = {
 
         try {
             const response = await fetch(endpoint, config);
-            const data = await response.json().catch(() => ({}));
+            let data = {};
+            const rawText = await response.text();
+            try {
+                data = JSON.parse(rawText);
+            } catch (e) {
+                data = { error: rawText && rawText.length < 200 && !rawText.includes('<html') ? rawText : null };
+            }
 
             if (!response.ok) {
                 // Automatic multi-attempt retry if server is restarting / deploying on Render (HTTP 502/503)
@@ -40,6 +46,8 @@ const API = {
                 if (!friendlyMessage) {
                     if (response.status === 502 || response.status === 503) {
                         friendlyMessage = "Server is warming up or updating. Please try again in a few moments.";
+                    } else if (response.status === 500) {
+                        friendlyMessage = "Server error occurred. Please try again in a moment.";
                     } else {
                         friendlyMessage = `HTTP ${response.status}: Request failed`;
                     }

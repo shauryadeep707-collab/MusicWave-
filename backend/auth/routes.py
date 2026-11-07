@@ -104,11 +104,26 @@ def register():
             "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
             (username, email, pwd_hash)
         )
-        execute_db(
-            "INSERT INTO user_profiles (user_id, display_name, avatar_url) VALUES (?, ?, '/static/images/default-avatar.png')",
-            (user_id, display_name)
-        )
-        execute_db("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
+        if not user_id:
+            user_row = query_db("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,), one=True)
+            if user_row:
+                user_id = user_row['id']
+
+        if not user_id:
+            raise Exception("Unable to finalize user creation in database.")
+
+        try:
+            execute_db(
+                "INSERT INTO user_profiles (user_id, display_name, avatar_url) VALUES (?, ?, '/static/images/default-avatar.png')",
+                (user_id, display_name)
+            )
+        except Exception:
+            pass
+
+        try:
+            execute_db("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
+        except Exception:
+            pass
         
         # Set permanent session for lifetime login
         session.permanent = True

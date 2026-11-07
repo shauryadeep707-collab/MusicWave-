@@ -52,6 +52,10 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp)
     app.register_blueprint(recommendations_bp)
 
+    @app.errorhandler(500)
+    def internal_error(e):
+        return jsonify({'error': 'Server encountered an error processing your request. Please try again.'}), 500
+
     # Health Check API
     @app.route('/api/health')
     def health_check():
