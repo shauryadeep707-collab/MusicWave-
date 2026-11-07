@@ -454,7 +454,46 @@ def execute_db(query, args=(), commit=True):
         cur.close()
         return last_id, row_count
 
-def get_auth_user_id():
+def create_guest_user():
+    """Create a persistent guest user so visitors can immediately use Jams, playlists, and favorites without hurdles."""
+    try:
+        from flask import session
+        import random
+        import uuid
+        from werkzeug.security import generate_password_hash
+
+        code = random.randint(1000, 9999)
+        guest_username = f"Guest_{code}"
+        while query_db("SELECT id FROM users WHERE username = ?", (guest_username,), one=True):
+            code = random.randint(1000, 9999)
+            guest_username = f"Guest_{code}"
+
+        guest_email = f"guest_{code}_{uuid.uuid4().hex[:6]}@musicwave.io"
+        pwd_hash = generate_password_hash("guest_pass", method="pbkdf2:sha256")
+
+        user_id, _ = execute_db(
+            "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'guest')",
+            (guest_username, guest_email, pwd_hash)
+        )
+        if user_id:
+            execute_db(
+                "INSERT INTO user_profiles (user_id, display_name, avatar_url) VALUES (?, ?, '/static/images/default-avatar.png')",
+                (user_id, guest_username)
+            )
+            execute_db("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
+            from flask import has_request_context, session
+            if has_request_context():
+                session['user_id'] = user_id
+                session['username'] = guest_username
+                session['role'] = 'guest'
+                session.permanent = True
+            return user_id
+        return None
+    except Exception as e:
+        print(f"[Guest Provision Error]: {e}")
+        return None
+
+def get_auth_user_id(auto_create_guest=False):
     """Retrieve and validate user_id from session or X-User-Id header for lifetime login persistence."""
     try:
         from flask import session, request
@@ -464,15 +503,19 @@ def get_auth_user_id():
             if fallback and fallback.isdigit():
                 user_id = int(fallback)
 
-        if not user_id:
-            return None
+        if user_id:
+            # Verify user exists in database to guarantee foreign key integrity
+            user_row = query_db("SELECT id FROM users WHERE id = ? AND is_active", (user_id,), one=True)
+            if user_row:
+                session['user_id'] = user_row['id']
+                session.permanent = True
+                return user_row['id']
 
-        # Verify user exists in database to guarantee foreign key integrity
-        user_row = query_db("SELECT id FROM users WHERE id = ? AND is_active", (user_id,), one=True)
-        if user_row:
-            session['user_id'] = user_row['id']
-            session.permanent = True
-            return user_row['id']
+        if auto_create_guest:
+            return create_guest_user()
+
         return None
     except Exception:
+        if auto_create_guest:
+            return create_guest_user()
         return None

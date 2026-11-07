@@ -3,34 +3,13 @@ import random
 from typing import Optional
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, session
-from backend.database.db import query_db, execute_db, is_postgres
+from backend.database.db import query_db, execute_db, is_postgres, get_auth_user_id
 
 jams_bp = Blueprint('jams', __name__, url_prefix='/api/jams')
 
 def generate_join_code() -> str:
     """Generate a random 4-digit numerical join code."""
     return f"{random.randint(1000, 9999)}"
-
-def get_auth_user_id() -> Optional[int]:
-    """Retrieve validated user_id from session or fallback X-User-Id header."""
-    user_id = session.get('user_id')
-    if not user_id:
-        fallback = request.headers.get('X-User-Id')
-        if fallback and fallback.isdigit():
-            user_id = int(fallback)
-
-    if not user_id:
-        return None
-
-    # Validate that user exists in database to prevent foreign key errors
-    try:
-        user_row = query_db("SELECT id FROM users WHERE id = ? AND is_active", (user_id,), one=True)
-        if not user_row:
-            return None
-    except Exception:
-        return None
-
-    return user_id
 
 def parse_expiry(exp_val) -> Optional[datetime]:
     if not exp_val:
@@ -63,9 +42,9 @@ def list_public_jams():
 @jams_bp.route('/', methods=['POST'])
 def create_jam():
     """Create a new Jam room with a 4-digit join code valid for 10 minutes."""
-    user_id = get_auth_user_id()
+    user_id = get_auth_user_id(auto_create_guest=True)
     if not user_id:
-        return jsonify({'error': 'Authentication required to create a Jam room'}), 401
+        return jsonify({'error': 'Could not initialize session to create Jam room. Please try again.'}), 500
 
     data = request.get_json() or {}
     name = data.get('name', '').strip()
@@ -180,9 +159,9 @@ def join_jam():
     1. A 4-digit join code (valid for 10 minutes)
     2. An 8-character Room ID
     """
-    user_id = get_auth_user_id()
+    user_id = get_auth_user_id(auto_create_guest=True)
     if not user_id:
-        return jsonify({'error': 'Please sign in to join Jam rooms'}), 401
+        return jsonify({'error': 'Could not initialize session to join Jam room.'}), 500
 
     data = request.get_json() or {}
     code_or_id = str(data.get('code_or_id') or data.get('join_code') or data.get('room_id') or '').strip()

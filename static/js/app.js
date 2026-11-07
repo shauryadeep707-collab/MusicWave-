@@ -354,6 +354,13 @@ const App = {
                 this.updateUserUI(res.user);
                 localStorage.setItem('musicwave_auth_user', JSON.stringify(res.user));
                 localStorage.setItem('musicwave_user_id', res.user.id);
+            } else if (!cachedUser) {
+                // Auto-provision seamless guest identity so visitor can immediately host jams and save favorites
+                const guestUser = await API.createGuestSession();
+                if (guestUser) {
+                    State.set('user', guestUser);
+                    this.updateUserUI(guestUser);
+                }
             }
         } catch (e) {
             console.warn('Auth check skipped (offline or unauthenticated)');
@@ -716,11 +723,9 @@ const App = {
     async toggleCurrentFavourite() {
         const track = State.get('currentTrack');
         if (!track) return;
-        const user = State.get('user');
+        let user = State.get('user');
         if (!user) {
-            this.openAuthModal('login');
-            UI.showToast('Please sign in or register to add favourites!', 'info');
-            return;
+            user = await API.createGuestSession();
         }
         try {
             const res = await API.toggleFavourite(track.id);
@@ -728,16 +733,7 @@ const App = {
             if (btn) btn.classList.toggle('liked', res.is_favourite);
             UI.showToast(res.is_favourite ? 'Added to Favourites' : 'Removed from Favourites', 'success');
         } catch (e) {
-            if (e.status === 401) {
-                State.set('user', null);
-                localStorage.removeItem('musicwave_auth_user');
-                localStorage.removeItem('musicwave_user_id');
-                this.updateUserUI(null);
-                this.openAuthModal('login');
-                UI.showToast('Please sign in to save favourite songs!', 'info');
-            } else {
-                UI.showToast(e.message, 'error');
-            }
+            UI.showToast(e.message, 'error');
         }
     },
 
@@ -871,6 +867,11 @@ const App = {
         const codeOrId = input ? input.value.trim() : '';
         if (!codeOrId) return;
 
+        let user = State.get('user');
+        if (!user) {
+            user = await API.createGuestSession();
+        }
+
         try {
             UI.showToast('Connecting to Music Jam...', 'info');
             const res = await API.joinJam(codeOrId);
@@ -878,11 +879,7 @@ const App = {
             UI.showToast(`Joined ${res.room_name}!`, 'success');
             await this.enterJamRoom(res.room_id);
         } catch (err) {
-            if (err.status === 401) {
-                this.closeJoinJamModal();
-                this.openAuthModal('login');
-                UI.showToast('Please sign in or register to join Jam rooms!', 'info');
-            } else if (errEl) {
+            if (errEl) {
                 errEl.textContent = err.message || 'Failed to join Jam room';
                 errEl.style.display = 'block';
             } else {
@@ -984,52 +981,37 @@ const App = {
         }
     },
 
-    openCreateJamModal() {
-        const user = State.get('user');
+    async openCreateJamModal() {
+        let user = State.get('user');
         if (!user) {
-            this.openAuthModal('login');
-            UI.showToast('Please sign in or register to host a Jam room!', 'info');
-            return;
+            user = await API.createGuestSession();
         }
         const name = prompt('Enter a name for your Music Jam room:');
         if (!name || !name.trim()) return;
-        API.createJam(name.trim(), 'A real-time music jam room').then(res => {
-            UI.showToast(`Jam room "${name.trim()}" created!`, 'success');
-            this.navigateTo('jams');
-        }).catch(err => {
-            if (err.status === 401) {
-                State.set('user', null);
-                localStorage.removeItem('musicwave_auth_user');
-                localStorage.removeItem('musicwave_user_id');
-                this.updateUserUI(null);
-                this.openAuthModal('login');
-                UI.showToast('Please sign in to host a Jam room!', 'info');
-            } else {
-                UI.showToast(err.message || 'Failed to create Jam room', 'error');
-            }
-        });
+        try {
+            UI.showToast('Creating Jam room...', 'info');
+            const res = await API.createJam(name.trim(), 'A real-time music jam room');
+            UI.showToast(`Jam room "${name.trim()}" created! 4-Digit Code: ${res.room.join_code}`, 'success');
+            await this.enterJamRoom(res.room.id);
+        } catch (err) {
+            UI.showToast(err.message || 'Failed to create Jam room', 'error');
+        }
     },
 
-    openCreatePlaylistModal() {
-        const user = State.get('user') || localStorage.getItem('musicwave_user_id');
+    async openCreatePlaylistModal() {
+        let user = State.get('user') || localStorage.getItem('musicwave_user_id');
         if (!user) {
-            this.openAuthModal('login');
-            UI.showToast('Please sign in to create and save personal playlists!', 'info');
-            return;
+            user = await API.createGuestSession();
         }
         const name = prompt('Enter a title for your new playlist:');
         if (!name || !name.trim()) return;
-        API.createPlaylist(name.trim(), '').then(res => {
+        try {
+            await API.createPlaylist(name.trim(), '');
             UI.showToast(`Playlist "${name.trim()}" created!`, 'success');
             this.navigateTo('library');
-        }).catch(err => {
-            if (err.status === 401) {
-                this.openAuthModal('login');
-                UI.showToast('Please sign in to create playlists', 'info');
-            } else {
-                UI.showToast(err.message || 'Failed to create playlist', 'error');
-            }
-        });
+        } catch (err) {
+            UI.showToast(err.message || 'Failed to create playlist', 'error');
+        }
     },
 
     async openPlaylist(playlistId) {

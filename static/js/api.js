@@ -59,6 +59,21 @@ const API = {
     },
 
     // Auth Endpoints (Permanent Lifetime Session)
+    async createGuestSession() {
+        try {
+            const res = await this.request('/api/auth/guest', { method: 'POST' });
+            if (res && res.user) {
+                localStorage.setItem('musicwave_auth_user', JSON.stringify(res.user));
+                localStorage.setItem('musicwave_user_id', res.user.id);
+                State.set('user', res.user);
+                if (window.App && App.updateUserUI) App.updateUserUI(res.user);
+            }
+            return res ? res.user : null;
+        } catch (e) {
+            console.warn('[Guest Provision Warning]:', e);
+            return null;
+        }
+    },
     getMe() {
         return this.request('/api/auth/me');
     },

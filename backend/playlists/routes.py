@@ -111,9 +111,9 @@ def get_playlist_tracks(playlist_id):
 
 @playlists_bp.route('/', methods=['POST'])
 def create_playlist():
-    user_id = get_auth_user_id()
+    user_id = get_auth_user_id(auto_create_guest=True)
     if not user_id:
-        return jsonify({'error': 'Please sign in or register to create custom playlists'}), 401
+        return jsonify({'error': 'Could not initialize session for playlist creation'}), 500
 
     data = request.get_json() or {}
     title = data.get('title', '').strip()

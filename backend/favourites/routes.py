@@ -20,9 +20,9 @@ def get_favourites():
 
 @favourites_bp.route('/toggle', methods=['POST'])
 def toggle_favourite():
-    user_id = get_auth_user_id()
+    user_id = get_auth_user_id(auto_create_guest=True)
     if not user_id:
-        return jsonify({'error': 'Please sign in or register to add favourites'}), 401
+        return jsonify({'error': 'Could not initialize session for favourites'}), 500
     
     data = request.get_json() or {}
     track_id = data.get('track_id')

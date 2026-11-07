@@ -32,6 +32,26 @@ def get_current_user():
         
     return jsonify({'authenticated': True, 'user': user}), 200
 
+@auth_bp.route('/guest', methods=['POST'])
+def create_guest():
+    """Create a persistent guest user identity so visitors can use all features seamlessly."""
+    from backend.database.db import create_guest_user
+    user_id = create_guest_user()
+    if not user_id:
+        return jsonify({'error': 'Failed to create guest session'}), 500
+    user = query_db("""
+        SELECT u.id, u.username, u.email, u.role,
+               p.display_name, p.avatar_url
+        FROM users u
+        LEFT JOIN user_profiles p ON u.id = p.user_id
+        WHERE u.id = ?
+    """, (user_id,), one=True)
+    return jsonify({
+        'authenticated': True,
+        'user': user,
+        'token': f"mw_token_{user_id}"
+    }), 201
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
