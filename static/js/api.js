@@ -78,6 +78,10 @@ const API = {
     search(query) {
         return this.request(`/api/music/search?q=${encodeURIComponent(query)}`);
     },
+    getTrackVersions(query, artist = '') {
+        const params = new URLSearchParams({ q: query, artist: artist });
+        return this.request(`/api/music/versions?${params.toString()}`);
+    },
     importYouTube(urlOrId) {
         return this.request('/api/music/youtube/import', {
             method: 'POST',

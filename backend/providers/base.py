@@ -40,6 +40,13 @@ class UnifiedTrack:
         self.licence_url = licence_url
         self.source_name = source_name
 
+    @property
+    def version_type(self) -> str:
+        text = f"{self.title} {self.album_name or ''}".lower()
+        if any(k in text for k in ['lofi', 'lo-fi', 'slowed', 'reverb', 'chillhop', 'ambient chill', 'chillout', 'lo fi']):
+            return 'lofi'
+        return 'official'
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'provider_id': self.provider_id,
@@ -56,7 +63,8 @@ class UnifiedTrack:
             'streaming_allowed': self.streaming_allowed,
             'licence_information': self.licence_information,
             'licence_url': self.licence_url,
-            'source_name': self.source_name
+            'source_name': self.source_name,
+            'version_type': self.version_type
         }
 
 class BaseMusicProvider(ABC):

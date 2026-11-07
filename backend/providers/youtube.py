@@ -98,7 +98,12 @@ class YouTubeProvider(BaseMusicProvider):
             t = self.fetch_track(video_id)
             return [t] if t else []
 
-        encoded = requests.utils.quote(f"{query} official audio song")
+        query_lower = query.lower()
+        if any(term in query_lower for term in ['lofi', 'lo-fi', 'slowed', 'reverb', 'chill', 'remix', 'official', 'audio', 'video', 'cover']):
+            search_query = query
+        else:
+            search_query = f"{query} song"
+        encoded = requests.utils.quote(search_query)
         headers = {
             'User-Agent': self.USER_AGENT,
             'Accept-Language': 'en-US,en;q=0.9'

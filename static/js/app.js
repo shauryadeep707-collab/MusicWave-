@@ -183,6 +183,22 @@ const App = {
             if (titleEl) titleEl.textContent = track.title || 'Unknown Track';
             if (artistEl) artistEl.textContent = track.artist_name || 'Unknown Artist';
             if (likeBtn) likeBtn.classList.remove('liked');
+
+            // Update Version Switcher Button in Player
+            const versionBtn = document.getElementById('player-version-switch-btn');
+            if (versionBtn) {
+                versionBtn.style.display = 'inline-flex';
+                const isLofi = track.version_type === 'lofi' || /lofi|lo-fi|slowed|reverb|chillhop/i.test(track.title);
+                if (isLofi) {
+                    versionBtn.innerHTML = '👑 Switch to Official';
+                    versionBtn.title = 'Switch to Official Studio Version';
+                    versionBtn.dataset.targetVersion = 'official';
+                } else {
+                    versionBtn.innerHTML = '☕ Switch to Lo-Fi';
+                    versionBtn.title = 'Switch to Relaxing Lo-Fi Chill Version';
+                    versionBtn.dataset.targetVersion = 'lofi';
+                }
+            }
         });
 
         // Playback state subscription
@@ -639,6 +655,30 @@ const App = {
             State.set('queue', tracks);
             State.set('queueIndex', 0);
             this.playTrack(tracks[0]);
+        }
+    },
+
+    async switchCurrentTrackVersion() {
+        const track = State.get('currentTrack');
+        if (!track) return;
+        const btn = document.getElementById('player-version-switch-btn');
+        const targetVersion = btn ? (btn.dataset.targetVersion || 'lofi') : 'lofi';
+        await this.playAlternativeVersion(track.title, track.artist_name, targetVersion);
+    },
+
+    async playAlternativeVersion(title, artist, targetVersion) {
+        try {
+            UI.showToast(`Finding ${targetVersion === 'lofi' ? '☕ Lo-Fi' : '👑 Official'} version...`, 'info');
+            const res = await API.getTrackVersions(title, artist);
+            const targetTrack = targetVersion === 'lofi' ? res.lofi_version : res.official_version;
+            if (targetTrack) {
+                this.playTrack(targetTrack);
+                UI.showToast(`Switched to ${targetVersion === 'lofi' ? '☕ Lo-Fi Version' : '👑 Official Version'}!`, 'success');
+            } else {
+                UI.showToast(`No ${targetVersion} version available for this song.`, 'info');
+            }
+        } catch (e) {
+            UI.showToast('Could not load version: ' + e.message, 'error');
         }
     }
 };

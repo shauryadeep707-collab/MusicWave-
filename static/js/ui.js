@@ -179,16 +179,29 @@ const UI = {
         const artist = track.artist_name || 'Unknown Artist';
         const artwork = track.artwork_url || '/static/images/default-cover.png';
         const trackJSON = JSON.stringify(track).replace(/"/g, '&quot;');
+        const safeTitle = (track.title || '').replace(/'/g, "\\'");
+        const safeArtist = (track.artist_name || '').replace(/'/g, "\\'");
+
+        const isLofi = track.version_type === 'lofi' || /lofi|lo-fi|slowed|reverb|chillhop/i.test(title);
+        const versionBadge = isLofi 
+            ? `<span class="version-badge lofi-badge" title="Lo-Fi Chill Version">☕ Lo-Fi</span>`
+            : `<span class="version-badge official-badge" title="Official Studio Version">👑 Official</span>`;
+
+        const switchVersionBtn = isLofi
+            ? `<button class="card-version-switch-btn" onclick="event.stopPropagation(); App.playAlternativeVersion('${safeTitle}', '${safeArtist}', 'official')" title="Play Official Version">👑 Official</button>`
+            : `<button class="card-version-switch-btn" onclick="event.stopPropagation(); App.playAlternativeVersion('${safeTitle}', '${safeArtist}', 'lofi')" title="Play Lo-Fi Version">☕ Lo-Fi</button>`;
 
         return `
             <div class="music-card" onclick="App.playTrack(${trackJSON})">
                 <div class="music-card-cover-wrapper">
                     <img src="${artwork}" class="music-card-cover" alt="${title}" loading="lazy"/>
+                    ${versionBadge}
                     <div class="music-card-play-overlay">
                         <div class="play-circle-btn">
                             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                         </div>
                     </div>
+                    ${switchVersionBtn}
                 </div>
                 <div class="music-card-title truncate" title="${title}">${title}</div>
                 <div class="music-card-subtitle truncate" title="${artist}">${artist}</div>
@@ -235,12 +248,73 @@ const UI = {
                     <div id="search-spell-correction" style="font-size: 0.88rem; color: var(--accent-amber); margin-top: 4px;"></div>
                 </div>
             </div>
+
+            ${query ? `
+                <div class="search-version-tabs" id="search-version-tabs">
+                    <button class="search-version-tab active" data-filter="all" onclick="UI.filterSearchResults('all')">🌟 All Versions</button>
+                    <button class="search-version-tab" data-filter="official" onclick="UI.filterSearchResults('official')">👑 Official Releases</button>
+                    <button class="search-version-tab" data-filter="lofi" onclick="UI.filterSearchResults('lofi')">☕ Lo-Fi / Slowed</button>
+                </div>
+                <div id="search-dual-version-container"></div>
+            ` : ''}
+
             <div id="search-results-container">
                 ${query ? '<div style="color: var(--text-muted); padding: 20px;">Searching across all songs and providers...</div>' : '<p style="color: var(--text-secondary);">Type any song title, artist, or genre above to find and play music.</p>'}
             </div>
         `;
 
         if (query) {
+            // 1. Fetch side-by-side Official & Lo-Fi versions
+            API.getTrackVersions(query).then(vRes => {
+                const dualContainer = document.getElementById('search-dual-version-container');
+                if (!dualContainer) return;
+
+                const official = vRes.official_version;
+                const lofi = vRes.lofi_version;
+
+                if (official || lofi) {
+                    const offJSON = official ? JSON.stringify(official).replace(/"/g, '&quot;') : null;
+                    const lofiJSON = lofi ? JSON.stringify(lofi).replace(/"/g, '&quot;') : null;
+
+                    dualContainer.innerHTML = `
+                        <div class="dual-version-card">
+                            <div class="dual-version-header">
+                                <div style="font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+                                    <span>🔀 Song Versions for "${query}"</span>
+                                </div>
+                                <span style="font-size: 0.8rem; color: var(--text-secondary);">Official studio release vs chill relaxing Lo-Fi version</span>
+                            </div>
+                            <div class="dual-version-grid">
+                                ${official ? `
+                                    <div class="version-box" onclick="App.playTrack(${offJSON})">
+                                        <img src="${official.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" alt="Official"/>
+                                        <div style="flex: 1; min-width: 0;">
+                                            <span class="badge" style="background: rgba(139, 92, 246, 0.25); color: var(--primary); font-size: 0.72rem; padding: 2px 8px;">👑 Official Studio Version</span>
+                                            <div class="truncate" style="font-weight: 700; font-size: 0.95rem; margin-top: 6px;">${official.title}</div>
+                                            <div class="truncate" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">${official.artist_name}</div>
+                                        </div>
+                                        <button class="btn-primary" style="padding: 6px 14px; font-size: 0.82rem; flex-shrink: 0;" onclick="event.stopPropagation(); App.playTrack(${offJSON})">▶ Play Official</button>
+                                    </div>
+                                ` : ''}
+
+                                ${lofi ? `
+                                    <div class="version-box" onclick="App.playTrack(${lofiJSON})">
+                                        <img src="${lofi.artwork_url || '/static/images/default-cover.png'}" class="version-box-img" alt="Lo-Fi"/>
+                                        <div style="flex: 1; min-width: 0;">
+                                            <span class="badge" style="background: rgba(245, 158, 11, 0.25); color: var(--accent-amber); font-size: 0.72rem; padding: 2px 8px;">☕ Lo-Fi Chill Version</span>
+                                            <div class="truncate" style="font-weight: 700; font-size: 0.95rem; margin-top: 6px;">${lofi.title}</div>
+                                            <div class="truncate" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">${lofi.artist_name}</div>
+                                        </div>
+                                        <button class="btn-primary" style="padding: 6px 14px; font-size: 0.82rem; flex-shrink: 0; background: var(--accent-amber); color: #12121c;" onclick="event.stopPropagation(); App.playTrack(${lofiJSON})">▶ Play Lo-Fi</button>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+            }).catch(() => {});
+
+            // 2. Fetch full search results
             API.search(query).then(res => {
                 const resultsEl = document.getElementById('search-results-container');
                 const correctionEl = document.getElementById('search-spell-correction');
@@ -250,9 +324,11 @@ const UI = {
                     correctionEl.innerHTML = `✨ Showing results for <strong>${res.correction}</strong> (auto-corrected from "${query}")`;
                 }
 
+                State.set('lastSearchResults', res.results || []);
+
                 if (res.results && res.results.length > 0) {
                     resultsEl.innerHTML = `
-                        <div class="grid-cards">
+                        <div class="grid-cards" id="search-grid-cards">
                             ${res.results.map(t => this.createMusicCardHTML(t)).join('')}
                         </div>
                     `;
@@ -267,6 +343,29 @@ const UI = {
                 const resultsEl = document.getElementById('search-results-container');
                 if (resultsEl) resultsEl.innerHTML = `<div style="color: var(--accent-rose);">Search error: ${err.message}</div>`;
             });
+        }
+    },
+
+    filterSearchResults(filter) {
+        document.querySelectorAll('.search-version-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.filter === filter);
+        });
+
+        const allTracks = State.get('lastSearchResults') || [];
+        const grid = document.getElementById('search-grid-cards');
+        if (!grid) return;
+
+        let filtered = allTracks;
+        if (filter === 'official') {
+            filtered = allTracks.filter(t => t.version_type !== 'lofi' && !/lofi|lo-fi|slowed|reverb/i.test(t.title));
+        } else if (filter === 'lofi') {
+            filtered = allTracks.filter(t => t.version_type === 'lofi' || /lofi|lo-fi|slowed|reverb/i.test(t.title));
+        }
+
+        if (filtered.length > 0) {
+            grid.innerHTML = filtered.map(t => this.createMusicCardHTML(t)).join('');
+        } else {
+            grid.innerHTML = `<div style="padding: 30px; text-align: center; color: var(--text-secondary); grid-column: 1 / -1;">No ${filter} versions found in current results.</div>`;
         }
     },
 
