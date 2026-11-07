@@ -10,8 +10,12 @@ def get_next_recommended():
     Get the next song to auto-play based on the current/previous song.
     """
     track_id = request.args.get('current_track_id')
-    if not track_id:
-        return jsonify({'error': 'current_track_id is required'}), 400
+    title = request.args.get('title')
+    artist = request.args.get('artist')
+    genre = request.args.get('genre', '')
+
+    if not track_id and not title:
+        return jsonify({'error': 'current_track_id or title is required'}), 400
 
     user_id = session.get('user_id')
     if not user_id:
@@ -20,14 +24,18 @@ def get_next_recommended():
             user_id = int(fallback_id)
 
     # Get current track details
-    current_track = query_db("SELECT * FROM tracks WHERE id = ?", (track_id,), one=True)
+    current_track = None
+    if track_id and str(track_id).isdigit():
+        current_track = query_db("SELECT * FROM tracks WHERE id = ?", (int(track_id),), one=True)
+
     if not current_track:
-        # Check if caller passed track title and artist via query params
-        title = request.args.get('title')
-        artist = request.args.get('artist')
-        genre = request.args.get('genre', '')
         if title:
-            current_track = {'id': None, 'title': title, 'artist_name': artist or 'Artist', 'genre': genre}
+            current_track = {
+                'id': int(track_id) if track_id and str(track_id).isdigit() else None,
+                'title': title,
+                'artist_name': artist or 'Artist',
+                'genre': genre
+            }
         else:
             return jsonify({'error': 'Track not found'}), 404
 

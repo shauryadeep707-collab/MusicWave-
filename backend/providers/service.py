@@ -20,22 +20,42 @@ class MusicService:
             'youtube': YouTubeProvider()
         }
 
-    def _persist_tracks(self, tracks: List[UnifiedTrack]) -> List[Dict[str, Any]]:
+    def _persist_tracks(self, tracks: List[Any]) -> List[Dict[str, Any]]:
         """Persist or update discovered tracks in the database and return unified dicts with internal database IDs."""
         persisted = []
         is_pg = is_postgres()
 
         for track in tracks:
+            is_dict = isinstance(track, dict)
+            provider_id = track.get('provider_id') if is_dict else getattr(track, 'provider_id', '')
+            provider_track_id = track.get('provider_track_id') if is_dict else getattr(track, 'provider_track_id', '')
+            if not provider_id or not provider_track_id:
+                continue
+
             # Check if track already exists in database
             existing = query_db(
                 "SELECT * FROM tracks WHERE provider_id = ? AND provider_track_id = ?",
-                (track.provider_id, track.provider_track_id),
+                (provider_id, provider_track_id),
                 one=True
             )
 
             if existing:
                 persisted.append(existing)
                 continue
+
+            title = track.get('title') if is_dict else getattr(track, 'title', 'Untitled')
+            artist_name = track.get('artist_name') if is_dict else getattr(track, 'artist_name', 'Unknown')
+            album_name = track.get('album_name') if is_dict else getattr(track, 'album_name', '')
+            genre = track.get('genre') if is_dict else getattr(track, 'genre', '')
+            duration = track.get('duration') if is_dict else getattr(track, 'duration', 0)
+            artwork_url = track.get('artwork_url') if is_dict else getattr(track, 'artwork_url', '')
+            stream_url = track.get('stream_url') if is_dict else getattr(track, 'stream_url', '')
+            download_url = track.get('download_url') if is_dict else getattr(track, 'download_url', '')
+            download_allowed = bool(track.get('download_allowed', True) if is_dict else getattr(track, 'download_allowed', True))
+            streaming_allowed = bool(track.get('streaming_allowed', True) if is_dict else getattr(track, 'streaming_allowed', True))
+            licence_information = track.get('licence_information') if is_dict else getattr(track, 'licence_information', '')
+            licence_url = track.get('licence_url') if is_dict else getattr(track, 'licence_url', '')
+            source_name = track.get('source_name') if is_dict else getattr(track, 'source_name', '')
 
             try:
                 if is_pg:
@@ -47,9 +67,9 @@ class MusicService:
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (provider_id, provider_track_id) DO NOTHING
                     """, (
-                        track.provider_id, track.provider_track_id, track.title, track.artist_name, track.album_name,
-                        track.genre, track.duration, track.artwork_url, track.stream_url, track.download_url,
-                        track.download_allowed, track.streaming_allowed, track.licence_information, track.licence_url, track.source_name
+                        provider_id, provider_track_id, title, artist_name, album_name,
+                        genre, duration, artwork_url, stream_url, download_url,
+                        download_allowed, streaming_allowed, licence_information, licence_url, source_name
                     ))
                 else:
                     execute_db("""
@@ -59,23 +79,23 @@ class MusicService:
                             download_allowed, streaming_allowed, licence_information, licence_url, source_name
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        track.provider_id, track.provider_track_id, track.title, track.artist_name, track.album_name,
-                        track.genre, track.duration, track.artwork_url, track.stream_url, track.download_url,
-                        track.download_allowed, track.streaming_allowed, track.licence_information, track.licence_url, track.source_name
+                        provider_id, provider_track_id, title, artist_name, album_name,
+                        genre, duration, artwork_url, stream_url, download_url,
+                        download_allowed, streaming_allowed, licence_information, licence_url, source_name
                     ))
 
                 saved = query_db(
                     "SELECT * FROM tracks WHERE provider_id = ? AND provider_track_id = ?",
-                    (track.provider_id, track.provider_track_id),
+                    (provider_id, provider_track_id),
                     one=True
                 )
                 if saved:
                     persisted.append(saved)
                 else:
-                    persisted.append(track.to_dict())
+                    persisted.append(track if is_dict else track.to_dict())
             except Exception as e:
                 print(f"[Track Persistence Warning]: {e}")
-                persisted.append(track.to_dict())
+                persisted.append(track if is_dict else track.to_dict())
 
         return persisted
 

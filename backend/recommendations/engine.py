@@ -192,8 +192,8 @@ class MusicWaveRecommendationEngine:
 
         if candidate_dicts:
             best_track = candidate_dicts[0][1]
-            # Persist selected track
-            persisted = music_service._persist_tracks([best_track] if hasattr(best_track, 'provider_id') else [])
+            # Persist selected track into DB so it has an internal id for future recommendations
+            persisted = music_service._persist_tracks([best_track])
             return persisted[0] if persisted else best_track
 
         # Fallback to general trending
@@ -219,6 +219,7 @@ class MusicWaveRecommendationEngine:
                     VALUES (?, ?, 1, CURRENT_TIMESTAMP)
                     ON CONFLICT (from_track_id, to_track_id)
                     DO UPDATE SET transition_count = song_transitions.transition_count + 1, last_transition_at = CURRENT_TIMESTAMP
+                    RETURNING from_track_id
                 """, (from_track_id, to_track_id))
             else:
                 execute_db("""

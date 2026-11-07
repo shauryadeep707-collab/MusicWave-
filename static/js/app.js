@@ -51,7 +51,12 @@ const App = {
                             this.isYtReady = true;
                             console.log("▶️ YouTube Embedded Audio Engine Ready");
                         },
-                        'onStateChange': (e) => this.onYouTubeStateChange(e)
+                        'onStateChange': (e) => this.onYouTubeStateChange(e),
+                        'onError': (e) => {
+                            console.warn("YouTube player error:", e.data);
+                            UI.showToast('Track stream unavailable. Auto-playing next...', 'error');
+                            setTimeout(() => this.nextTrack(), 1200);
+                        }
                     }
                 });
             } else {
@@ -436,6 +441,34 @@ const App = {
         const lastQuery = State.get('lastSearchQuery') || '';
         API.autoSortTrack(track.id, lastQuery, track.title, track.artist_name).catch(() => {});
 
+        // Queue synchronization & history tracking
+        const queue = State.get('queue') || [];
+        const trackIdx = queue.findIndex(t => 
+            (t.id && track.id && t.id === track.id) ||
+            (t.provider_track_id && track.provider_track_id && t.provider_track_id === track.provider_track_id) ||
+            (t.title === track.title && t.artist_name === track.artist_name)
+        );
+
+        if (trackIdx !== -1) {
+            State.set('queueIndex', trackIdx);
+        } else {
+            // Check if track is part of the current search results
+            const searchResults = State.get('lastSearchResults') || [];
+            const searchIdx = searchResults.findIndex(t =>
+                (t.id && track.id && t.id === track.id) ||
+                (t.provider_track_id && track.provider_track_id && t.provider_track_id === track.provider_track_id) ||
+                (t.title === track.title)
+            );
+            if (searchIdx !== -1) {
+                State.set('queue', [...searchResults]);
+                State.set('queueIndex', searchIdx);
+            } else {
+                queue.push(track);
+                State.set('queue', queue);
+                State.set('queueIndex', queue.length - 1);
+            }
+        }
+
         State.set('currentTrack', track);
 
         // 1. YouTube Playback Engine
@@ -443,13 +476,31 @@ const App = {
             this.audio.pause();
             const videoId = track.provider_track_id || track.stream_url;
             if (this.ytPlayer && this.ytPlayer.loadVideoById) {
-                this.ytPlayer.loadVideoById(videoId);
-                this.ytPlayer.playVideo();
-                State.set('isPlaying', true);
-                UI.showToast(`Playing from YouTube: ${track.title}`, 'music');
-                if (track.id) API.recordPlay(track.id).catch(() => {});
+                try {
+                    this.ytPlayer.loadVideoById(videoId);
+                    this.ytPlayer.playVideo();
+                    State.set('isPlaying', true);
+                    UI.showToast(`Playing from YouTube: ${track.title}`, 'music');
+                    if (track.id) API.recordPlay(track.id).catch(() => {});
+                } catch (ytErr) {
+                    console.warn("YouTube play attempt failed, retrying:", ytErr);
+                    setTimeout(() => {
+                        if (this.ytPlayer && this.ytPlayer.loadVideoById) {
+                            this.ytPlayer.loadVideoById(videoId);
+                            this.ytPlayer.playVideo();
+                            State.set('isPlaying', true);
+                        }
+                    }, 500);
+                }
             } else {
-                UI.showToast('YouTube player is preparing, please try again in a second', 'info');
+                UI.showToast('Preparing YouTube player...', 'info');
+                setTimeout(() => {
+                    if (this.ytPlayer && this.ytPlayer.loadVideoById) {
+                        this.ytPlayer.loadVideoById(videoId);
+                        this.ytPlayer.playVideo();
+                        State.set('isPlaying', true);
+                    }
+                }, 800);
             }
             return;
         }
@@ -512,13 +563,43 @@ const App = {
     },
 
     async nextTrack() {
+        const repeatMode = State.get('repeatMode');
+        if (repeatMode === 'one') {
+            const current = State.get('currentTrack');
+            if (current) {
+                if (current.provider_id === 'youtube' && this.ytPlayer && this.ytPlayer.seekTo) {
+                    this.ytPlayer.seekTo(0);
+                    this.ytPlayer.playVideo();
+                } else if (this.audio) {
+                    this.audio.currentTime = 0;
+                    this.audio.play();
+                }
+                return;
+            }
+        }
+
         const queue = State.get('queue') || [];
+        const shuffle = State.get('shuffle');
+
+        if (shuffle && queue.length > 1) {
+            let nextIdx = Math.floor(Math.random() * queue.length);
+            if (nextIdx === State.get('queueIndex')) {
+                nextIdx = (nextIdx + 1) % queue.length;
+            }
+            State.set('queueIndex', nextIdx);
+            this.playTrack(queue[nextIdx]);
+            return;
+        }
+
         let idx = State.get('queueIndex') + 1;
         if (idx < queue.length && queue[idx]) {
             State.set('queueIndex', idx);
             this.playTrack(queue[idx]);
+        } else if (repeatMode === 'all' && queue.length > 0) {
+            State.set('queueIndex', 0);
+            this.playTrack(queue[0]);
         } else {
-            // Queue ended: seamlessly auto-predict and play the next song matching the previous track
+            // Queue ended or playing single song: seamlessly auto-recommend and auto-play the next song matching the previous track
             await this.playNextRecommended();
         }
     },
@@ -528,10 +609,10 @@ const App = {
         if (!current) return;
 
         try {
-            UI.showToast(`✨ Finding next song matching "${current.title}"...`, 'info');
+            UI.showToast(`✨ Auto-finding next song matching "${current.title}"...`, 'info');
             const recent = (State.get('queue') || []).map(t => t.id).filter(Boolean);
             const res = await API.getNextRecommended(
-                current.id,
+                current.id || '',
                 current.title,
                 current.artist_name,
                 current.genre || '',
@@ -539,22 +620,24 @@ const App = {
             );
 
             if (res && res.next_track) {
+                const nextSong = res.next_track;
                 const queue = State.get('queue') || [];
-                queue.push(res.next_track);
+                queue.push(nextSong);
                 State.set('queue', queue);
                 State.set('queueIndex', queue.length - 1);
 
-                if (current.id && res.next_track.id) {
-                    API.recordTransition(current.id, res.next_track.id).catch(() => {});
+                if (current.id && nextSong.id) {
+                    API.recordTransition(current.id, nextSong.id).catch(() => {});
                 }
 
-                this.playTrack(res.next_track);
-                UI.showToast(`📻 Auto-Playing Next: ${res.next_track.title}`, 'music');
+                this.playTrack(nextSong);
+                UI.showToast(`📻 Auto-Playing Next: ${nextSong.title}`, 'music');
             } else {
-                UI.showToast('No further recommendations available.', 'info');
+                UI.showToast('End of recommended radio queue.', 'info');
             }
         } catch (e) {
             console.warn('Auto-next recommendation failed:', e);
+            UI.showToast('Unable to auto-fetch next track.', 'error');
         }
     },
 
