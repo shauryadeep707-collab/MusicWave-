@@ -26,7 +26,24 @@ const API = {
             const data = await response.json().catch(() => ({}));
 
             if (!response.ok) {
-                const error = new Error(data.error || `HTTP ${response.status}: Request failed`);
+                // Automatic retry if server is restarting / deploying on Render (HTTP 502/503)
+                if ((response.status === 502 || response.status === 503) && !config._isRetry) {
+                    console.warn(`[API Notice] Server returned ${response.status} during deploy/cold start. Retrying in 2s...`);
+                    await new Promise(r => setTimeout(r, 2000));
+                    config._isRetry = true;
+                    return this.request(endpoint, config);
+                }
+
+                let friendlyMessage = data.error;
+                if (!friendlyMessage) {
+                    if (response.status === 502 || response.status === 503) {
+                        friendlyMessage = "Server is updating with your latest features. Please wait a few seconds and try again.";
+                    } else {
+                        friendlyMessage = `HTTP ${response.status}: Request failed`;
+                    }
+                }
+
+                const error = new Error(friendlyMessage);
                 error.status = response.status;
                 error.data = data;
                 throw error;
