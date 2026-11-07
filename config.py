@@ -10,7 +10,8 @@ class Config:
     DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     PORT = int(os.getenv("PORT", 5000))
     
-    # Database
+    # Database (Supabase PostgreSQL or fallback to local SQLite)
+    DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
     DATABASE_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "instance" / "musicwave.db"))
     
     # Upload Directories
