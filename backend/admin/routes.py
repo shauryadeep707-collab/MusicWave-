@@ -13,7 +13,7 @@ def get_stats():
 
     user_count = query_db("SELECT COUNT(*) as count FROM users", one=True)['count']
     track_count = query_db("SELECT COUNT(*) as count FROM tracks", one=True)['count']
-    jam_count = query_db("SELECT COUNT(*) as count FROM jam_rooms WHERE is_active = 1", one=True)['count']
+    jam_count = query_db("SELECT COUNT(*) as count FROM jam_rooms WHERE is_active", one=True)['count']
     download_count = query_db("SELECT COUNT(*) as count FROM downloaded_track_metadata", one=True)['count']
 
     return jsonify({

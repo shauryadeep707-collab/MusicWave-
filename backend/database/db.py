@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import re
 from pathlib import Path
 from flask import g, current_app
 from werkzeug.security import generate_password_hash
@@ -394,7 +395,11 @@ def query_db(query, args=(), one=False):
     if is_postgres():
         cur = db.cursor(cursor_factory=RealDictCursor)
         # Adapt placeholders and functions for Postgres
-        pg_query = query.replace('?', '%s').replace('RANDOM()', 'RANDOM()')
+        pg_query = query.replace('?', '%s')
+        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*0\b', r'\1 = FALSE', pg_query)
+        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*0\b', r'\1 = FALSE', pg_query)
         cur.execute(pg_query, args)
         rv = cur.fetchall()
         cur.close()
@@ -411,6 +416,10 @@ def execute_db(query, args=(), commit=True):
     if is_postgres():
         cur = db.cursor()
         pg_query = query.replace('?', '%s')
+        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+        pg_query = re.sub(r'(\b\w+\.is_active|\bis_active)\s*=\s*0\b', r'\1 = FALSE', pg_query)
+        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*1\b', r'\1 = TRUE', pg_query)
+        pg_query = re.sub(r'(\b\w+\.is_public|\bis_public)\s*=\s*0\b', r'\1 = FALSE', pg_query)
         # If insert, append RETURNING id to get lastrowid
         is_insert = pg_query.strip().upper().startswith('INSERT')
         should_return = is_insert and 'RETURNING' not in pg_query.upper() and 'DO NOTHING' not in pg_query.upper()

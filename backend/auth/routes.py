@@ -23,7 +23,7 @@ def get_current_user():
                p.display_name, p.bio, p.avatar_url, p.banner_url
         FROM users u
         LEFT JOIN user_profiles p ON u.id = p.user_id
-        WHERE u.id = ? AND u.is_active = 1
+        WHERE u.id = ? AND u.is_active
     """, (user_id,), one=True)
     
     if not user:

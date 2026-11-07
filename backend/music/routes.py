@@ -23,7 +23,7 @@ def tag_track_version(track: dict) -> dict:
 @music_bp.route('/genres', methods=['GET'])
 def get_genres():
     """Retrieve all active genres with accents and artwork."""
-    genres = query_db("SELECT * FROM genres WHERE is_active = 1 ORDER BY name ASC")
+    genres = query_db("SELECT * FROM genres WHERE is_active ORDER BY name ASC")
     return jsonify({'genres': genres}), 200
 
 @music_bp.route('/trending', methods=['GET'])

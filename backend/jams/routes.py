@@ -11,13 +11,25 @@ def generate_join_code() -> str:
     """Generate a random 4-digit numerical join code."""
     return f"{random.randint(1000, 9999)}"
 
-def get_auth_user_id() -> int:
-    """Retrieve user_id from session or fallback X-User-Id header."""
+def get_auth_user_id() -> Optional[int]:
+    """Retrieve validated user_id from session or fallback X-User-Id header."""
     user_id = session.get('user_id')
     if not user_id:
         fallback = request.headers.get('X-User-Id')
         if fallback and fallback.isdigit():
             user_id = int(fallback)
+
+    if not user_id:
+        return None
+
+    # Validate that user exists in database to prevent foreign key errors
+    try:
+        user_row = query_db("SELECT id FROM users WHERE id = ? AND is_active", (user_id,), one=True)
+        if not user_row:
+            return None
+    except Exception:
+        return None
+
     return user_id
 
 def parse_expiry(exp_val) -> Optional[datetime]:
