@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, session
 import re
-from backend.database.db import query_db, execute_db, is_postgres
+from backend.database.db import query_db, execute_db, is_postgres, get_auth_user_id
 
 playlists_bp = Blueprint('playlists', __name__, url_prefix='/api/playlists')
 
@@ -71,12 +71,7 @@ def detect_category(text: str) -> dict:
 
 @playlists_bp.route('/', methods=['GET'])
 def get_user_playlists():
-    user_id = session.get('user_id')
-    if not user_id:
-        fallback_id = request.headers.get('X-User-Id')
-        if fallback_id and fallback_id.isdigit():
-            user_id = int(fallback_id)
-
+    user_id = get_auth_user_id()
     if not user_id:
         return jsonify({'playlists': [], 'smart_playlists': [], 'custom_playlists': []}), 200
 
@@ -116,19 +111,14 @@ def get_playlist_tracks(playlist_id):
 
 @playlists_bp.route('/', methods=['POST'])
 def create_playlist():
-    user_id = session.get('user_id')
+    user_id = get_auth_user_id()
     if not user_id:
-        fallback_id = request.headers.get('X-User-Id')
-        if fallback_id and fallback_id.isdigit():
-            user_id = int(fallback_id)
-
-    if not user_id:
-        return jsonify({'error': 'Authentication required'}), 401
+        return jsonify({'error': 'Please sign in or register to create custom playlists'}), 401
 
     data = request.get_json() or {}
     title = data.get('title', '').strip()
     description = data.get('description', '').strip()
-    is_public = 1 if data.get('is_public', True) else 0
+    is_public = bool(data.get('is_public', True))
 
     if not title:
         return jsonify({'error': 'Playlist title is required'}), 400
@@ -136,7 +126,7 @@ def create_playlist():
     playlist_id, _ = execute_db("""
         INSERT INTO playlists (user_id, title, description, is_public, is_auto_generated)
         VALUES (?, ?, ?, ?, ?)
-    """, (user_id, title, description, bool(is_public), False))
+    """, (user_id, title, description, is_public, False))
 
     return jsonify({
         'message': 'Playlist created successfully',
@@ -144,7 +134,7 @@ def create_playlist():
             'id': playlist_id,
             'title': title,
             'description': description,
-            'is_public': bool(is_public),
+            'is_public': is_public,
             'is_auto_generated': False,
             'track_count': 0
         }
@@ -152,9 +142,9 @@ def create_playlist():
 
 @playlists_bp.route('/<int:playlist_id>/tracks', methods=['POST'])
 def add_track_to_playlist(playlist_id):
-    user_id = session.get('user_id')
+    user_id = get_auth_user_id()
     if not user_id:
-        return jsonify({'error': 'Authentication required'}), 401
+        return jsonify({'error': 'Please sign in or register to add tracks to playlists'}), 401
 
     data = request.get_json() or {}
     track_id = data.get('track_id')
@@ -183,12 +173,7 @@ def auto_sort_track():
     (e.g., 'Your Punjabi Mix', 'Your Retro Classics', 'Your Sad Vibes', etc.).
     Completely separate from user-created custom playlists.
     """
-    user_id = session.get('user_id')
-    if not user_id:
-        fallback_id = request.headers.get('X-User-Id')
-        if fallback_id and fallback_id.isdigit():
-            user_id = int(fallback_id)
-
+    user_id = get_auth_user_id()
     if not user_id:
         return jsonify({'status': 'guest_skipped'}), 200
 

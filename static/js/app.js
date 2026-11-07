@@ -452,20 +452,34 @@ const App = {
         if (trackIdx !== -1) {
             State.set('queueIndex', trackIdx);
         } else {
-            // Check if track is part of the current search results
-            const searchResults = State.get('lastSearchResults') || [];
-            const searchIdx = searchResults.findIndex(t =>
+            // Check if track is part of the currently viewed playlist
+            const playlistTracks = State.get('activePlaylistTracks') || [];
+            const playlistIdx = playlistTracks.findIndex(t =>
                 (t.id && track.id && t.id === track.id) ||
                 (t.provider_track_id && track.provider_track_id && t.provider_track_id === track.provider_track_id) ||
                 (t.title === track.title)
             );
-            if (searchIdx !== -1) {
-                State.set('queue', [...searchResults]);
-                State.set('queueIndex', searchIdx);
+
+            if (playlistIdx !== -1 && playlistTracks.length > 0) {
+                // Queue the entire playlist so all songs play in continuous order
+                State.set('queue', [...playlistTracks]);
+                State.set('queueIndex', playlistIdx);
             } else {
-                queue.push(track);
-                State.set('queue', queue);
-                State.set('queueIndex', queue.length - 1);
+                // Check if track is part of the current search results
+                const searchResults = State.get('lastSearchResults') || [];
+                const searchIdx = searchResults.findIndex(t =>
+                    (t.id && track.id && t.id === track.id) ||
+                    (t.provider_track_id && track.provider_track_id && t.provider_track_id === track.provider_track_id) ||
+                    (t.title === track.title)
+                );
+                if (searchIdx !== -1) {
+                    State.set('queue', [...searchResults]);
+                    State.set('queueIndex', searchIdx);
+                } else {
+                    queue.push(track);
+                    State.set('queue', queue);
+                    State.set('queueIndex', queue.length - 1);
+                }
             }
         }
 
@@ -927,12 +941,25 @@ const App = {
     },
 
     openCreatePlaylistModal() {
+        const user = State.get('user') || localStorage.getItem('musicwave_user_id');
+        if (!user) {
+            this.openAuthModal('login');
+            UI.showToast('Please sign in to create and save personal playlists!', 'info');
+            return;
+        }
         const name = prompt('Enter a title for your new playlist:');
-        if (!name) return;
-        API.createPlaylist(name, '').then(res => {
-            UI.showToast(`Playlist "${name}" created!`, 'success');
+        if (!name || !name.trim()) return;
+        API.createPlaylist(name.trim(), '').then(res => {
+            UI.showToast(`Playlist "${name.trim()}" created!`, 'success');
             this.navigateTo('library');
-        }).catch(err => UI.showToast(err.message, 'error'));
+        }).catch(err => {
+            if (err.status === 401) {
+                this.openAuthModal('login');
+                UI.showToast('Please sign in to create playlists', 'info');
+            } else {
+                UI.showToast(err.message || 'Failed to create playlist', 'error');
+            }
+        });
     },
 
     async openPlaylist(playlistId) {

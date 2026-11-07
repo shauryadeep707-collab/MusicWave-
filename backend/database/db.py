@@ -447,3 +447,26 @@ def execute_db(query, args=(), commit=True):
         row_count = cur.rowcount
         cur.close()
         return last_id, row_count
+
+def get_auth_user_id():
+    """Retrieve and validate user_id from session or X-User-Id header for lifetime login persistence."""
+    try:
+        from flask import session, request
+        user_id = session.get('user_id')
+        if not user_id:
+            fallback = request.headers.get('X-User-Id')
+            if fallback and fallback.isdigit():
+                user_id = int(fallback)
+
+        if not user_id:
+            return None
+
+        # Verify user exists in database to guarantee foreign key integrity
+        user_row = query_db("SELECT id FROM users WHERE id = ? AND is_active", (user_id,), one=True)
+        if user_row:
+            session['user_id'] = user_row['id']
+            session.permanent = True
+            return user_row['id']
+        return None
+    except Exception:
+        return None

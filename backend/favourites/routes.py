@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify, request, session
-from backend.database.db import query_db, execute_db
+from backend.database.db import query_db, execute_db, get_auth_user_id
 
 favourites_bp = Blueprint('favourites', __name__, url_prefix='/api/favourites')
 
 @favourites_bp.route('/', methods=['GET'])
 def get_favourites():
-    user_id = session.get('user_id')
+    user_id = get_auth_user_id()
     if not user_id:
         return jsonify({'favourites': []}), 200
     
@@ -20,9 +20,9 @@ def get_favourites():
 
 @favourites_bp.route('/toggle', methods=['POST'])
 def toggle_favourite():
-    user_id = session.get('user_id')
+    user_id = get_auth_user_id()
     if not user_id:
-        return jsonify({'error': 'Authentication required'}), 401
+        return jsonify({'error': 'Please sign in or register to add favourites'}), 401
     
     data = request.get_json() or {}
     track_id = data.get('track_id')
