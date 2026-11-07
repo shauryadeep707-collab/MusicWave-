@@ -721,16 +721,33 @@ const UI = {
                     ${currentTrack ? `
                         <div style="display: flex; align-items: center; gap: 20px;">
                             <img src="${currentTrack.artwork_url || '/static/images/default-cover.png'}" style="width: 100px; height: 100px; border-radius: var(--radius-md); object-fit: cover;" />
-                            <div>
-                                <h4 style="font-size: 1.2rem; font-weight: 700;">${currentTrack.title}</h4>
-                                <p style="color: var(--text-secondary); margin-top: 4px;">${currentTrack.artist_name}</p>
-                                <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; margin-top: 8px;">● Live Synchronized</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <h4 style="font-size: 1.2rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${currentTrack.title}</h4>
+                                <p style="color: var(--text-secondary); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${currentTrack.artist_name}</p>
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; margin-top: 8px; display: inline-flex; align-items: center; gap: 6px;">
+                                    <span class="status-indicator-dot"></span> Live Synchronized with Host
+                                </span>
+                                <div style="display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;">
+                                    ${isHost ? `
+                                        <button class="btn-primary" style="padding: 7px 16px; font-size: 0.85rem;" onclick="App.navigateTo('search')">🔍 Change Song</button>
+                                    ` : `
+                                        <button class="btn-primary" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 7px 18px; font-size: 0.85rem;" onclick="App.syncWithHostNow()">▶ Listen in Sync with Host</button>
+                                    `}
+                                </div>
                             </div>
                         </div>
                     ` : `
                         <div style="padding: 30px; text-align: center; color: var(--text-secondary);">
                             No track is playing right now.
-                            ${isHost ? '<p style="margin-top: 10px;"><button class="btn-primary" onclick="App.navigateTo(\'search\')">Search & Play Song</button></p>' : ''}
+                            ${isHost ? `
+                                <p style="margin-top: 12px;">
+                                    <button class="btn-primary" onclick="App.navigateTo('search')">Search & Play Song for Everyone</button>
+                                </p>
+                            ` : `
+                                <p style="margin-top: 10px; color: var(--text-muted); font-size: 0.88rem;">
+                                    Waiting for the host to pick a song... Audio will start automatically in sync!
+                                </p>
+                            `}
                         </div>
                     `}
                 </div>

@@ -7,10 +7,14 @@ const App = {
     ytPlayer: null,
     isYtReady: false,
     ytProgressTimer: null,
+    socket: null,
 
     async init() {
         console.log("🎵 MusicWave Engine Initializing...");
         
+        // Setup Real-time Jam Socket Engine
+        this.initSocket();
+
         // Setup Native Audio Player Event Listeners
         this.setupAudioListeners();
 
@@ -31,6 +35,108 @@ const App = {
 
         // Initial Routing based on path
         this.handleInitialRoute();
+    },
+
+    initSocket() {
+        if (typeof io !== 'undefined') {
+            try {
+                this.socket = io({ transports: ['websocket', 'polling'] });
+
+                this.socket.on('connect', () => {
+                    console.log('⚡ MusicWave Real-Time Jam Socket Connected (ID:', this.socket.id, ')');
+                    const activeJam = State.get('activeJamRoom');
+                    if (activeJam && activeJam.id) {
+                        this.socket.emit('join_jam', {
+                            room_id: activeJam.id,
+                            user: State.get('user')
+                        });
+                    }
+                });
+
+                this.setupJamSocketListeners();
+            } catch (err) {
+                console.warn('[Socket Init Warning]:', err);
+            }
+        }
+    },
+
+    setupJamSocketListeners() {
+        if (!this.socket) return;
+
+        // 1. Host started or changed track
+        this.socket.on('jam_track_changed', (data) => {
+            const activeJam = State.get('activeJamRoom');
+            if (!activeJam || activeJam.id !== data.room_id) return;
+            const isHost = State.get('isJamHost');
+            if (isHost) return; // Host triggered this
+
+            UI.showToast(`🎧 Jam Host started: ${data.track.title}`, 'music');
+            this.playTrack(data.track, { fromJam: true, startPosition: data.position || 0 });
+        });
+
+        // 2. Host paused, resumed, or scrubbed/seeked playback
+        this.socket.on('jam_playback_synced', (data) => {
+            const activeJam = State.get('activeJamRoom');
+            if (!activeJam || activeJam.id !== data.room_id) return;
+            const isHost = State.get('isJamHost');
+            if (isHost) return;
+
+            if (data.action === 'pause') {
+                if (this.ytPlayer && this.ytPlayer.pauseVideo) this.ytPlayer.pauseVideo();
+                if (this.audio) this.audio.pause();
+                State.set('isPlaying', false);
+            } else if (data.action === 'play') {
+                if (this.ytPlayer && this.ytPlayer.playVideo) this.ytPlayer.playVideo();
+                if (this.audio) this.audio.play();
+                State.set('isPlaying', true);
+            } else if (data.action === 'seek') {
+                const pos = parseFloat(data.position || 0);
+                if (this.ytPlayer && this.ytPlayer.seekTo) this.ytPlayer.seekTo(pos, true);
+                if (this.audio) this.audio.currentTime = pos;
+            }
+        });
+
+        // 3. Initial sync state when listener joins an ongoing jam
+        this.socket.on('jam_sync_state', (data) => {
+            const activeJam = State.get('activeJamRoom');
+            if (!activeJam || activeJam.id !== data.room_id) return;
+
+            if (data.track) {
+                const isHost = State.get('isJamHost');
+                if (!isHost) {
+                    UI.showToast(`🎧 Live Jam Audio Synchronized: ${data.track.title}`, 'music');
+                    if (data.status === 'playing') {
+                        this.playTrack(data.track, { fromJam: true, startPosition: data.position || 0 });
+                    }
+                }
+            }
+        });
+
+        // 4. Participant joined
+        this.socket.on('user_joined', (data) => {
+            const activeJam = State.get('activeJamRoom');
+            if (activeJam && activeJam.id === data.room_id) {
+                const name = data.user ? (data.user.display_name || data.user.username) : 'A listener';
+                UI.showToast(`👋 ${name} joined the Jam!`, 'info');
+                API.getJamRoom(activeJam.id).then(res => {
+                    if (State.get('activePage') === 'jams' && res.room) {
+                        UI.renderJamRoom(res);
+                    }
+                }).catch(() => {});
+            }
+        });
+
+        // 5. Participant left
+        this.socket.on('user_left', (data) => {
+            const activeJam = State.get('activeJamRoom');
+            if (activeJam && activeJam.id === data.room_id) {
+                API.getJamRoom(activeJam.id).then(res => {
+                    if (State.get('activePage') === 'jams' && res.room) {
+                        UI.renderJamRoom(res);
+                    }
+                }).catch(() => {});
+            }
+        });
     },
 
     initYouTubePlayer() {
@@ -305,12 +411,26 @@ const App = {
                 const rect = progressContainer.getBoundingClientRect();
                 const pos = (e.clientX - rect.left) / rect.width;
                 const track = State.get('currentTrack');
+                let targetSec = 0;
 
                 if (track?.provider_id === 'youtube' && this.ytPlayer && this.ytPlayer.seekTo) {
                     const dur = this.ytPlayer.getDuration() || 0;
-                    this.ytPlayer.seekTo(pos * dur, true);
+                    targetSec = pos * dur;
+                    this.ytPlayer.seekTo(targetSec, true);
                 } else if (this.audio.duration) {
-                    this.audio.currentTime = pos * this.audio.duration;
+                    targetSec = pos * this.audio.duration;
+                    this.audio.currentTime = targetSec;
+                }
+
+                // If host of active Jam, broadcast scrubbed position to all listeners
+                const activeJam = State.get('activeJamRoom');
+                const isHost = State.get('isJamHost');
+                if (activeJam && isHost && this.socket) {
+                    this.socket.emit('jam_playback_control', {
+                        room_id: activeJam.id,
+                        action: 'seek',
+                        position: targetSec
+                    });
                 }
             });
         }
@@ -432,10 +552,24 @@ const App = {
     },
 
     // Audio Playback Controls (Unified Native MP3 & YouTube)
-    playTrack(track) {
+    playTrack(track, options = {}) {
         if (!track) {
             UI.showToast('Invalid track selection', 'error');
             return;
+        }
+
+        // Real-Time Music Jam Broadcast:
+        // If current user is the host of an active Jam room, broadcast the song in real time to all listeners
+        const activeJam = State.get('activeJamRoom');
+        const isHost = State.get('isJamHost');
+        if (activeJam && isHost && !options?.fromJam) {
+            if (this.socket) {
+                this.socket.emit('jam_play_track', {
+                    room_id: activeJam.id,
+                    track: track,
+                    position: 0.0
+                });
+            }
         }
 
         // Train recommendation transition matrix: previousTrack -> currentTrack
@@ -473,36 +607,35 @@ const App = {
 
         State.set('currentTrack', track);
 
+        const startSec = Math.floor(options?.startPosition || 0);
+
         // 1. YouTube Playback Engine
         if (track.provider_id === 'youtube') {
             this.audio.pause();
             const videoId = track.provider_track_id || track.stream_url;
-            if (this.ytPlayer && this.ytPlayer.loadVideoById) {
-                try {
-                    this.ytPlayer.loadVideoById(videoId);
-                    this.ytPlayer.playVideo();
-                    State.set('isPlaying', true);
-                    UI.showToast(`Playing from YouTube: ${track.title}`, 'music');
-                    if (track.id) API.recordPlay(track.id).catch(() => {});
-                } catch (ytErr) {
-                    console.warn("YouTube play attempt failed, retrying:", ytErr);
-                    setTimeout(() => {
-                        if (this.ytPlayer && this.ytPlayer.loadVideoById) {
-                            this.ytPlayer.loadVideoById(videoId);
-                            this.ytPlayer.playVideo();
-                            State.set('isPlaying', true);
-                        }
-                    }, 500);
-                }
-            } else {
-                UI.showToast('Preparing YouTube player...', 'info');
-                setTimeout(() => {
-                    if (this.ytPlayer && this.ytPlayer.loadVideoById) {
-                        this.ytPlayer.loadVideoById(videoId);
+
+            const executeYtPlay = () => {
+                if (this.ytPlayer && this.ytPlayer.loadVideoById) {
+                    try {
+                        this.ytPlayer.loadVideoById({
+                            videoId: videoId,
+                            startSeconds: startSec
+                        });
                         this.ytPlayer.playVideo();
                         State.set('isPlaying', true);
+                        UI.showToast(`Playing from YouTube: ${track.title}`, 'music');
+                        if (track.id) API.recordPlay(track.id).catch(() => {});
+                    } catch (ytErr) {
+                        console.warn("YouTube play attempt error, retrying:", ytErr);
                     }
-                }, 800);
+                }
+            };
+
+            if (this.ytPlayer && this.ytPlayer.loadVideoById) {
+                executeYtPlay();
+            } else {
+                UI.showToast('Preparing YouTube player...', 'info');
+                setTimeout(executeYtPlay, 800);
             }
             return;
         }
@@ -519,6 +652,9 @@ const App = {
         }
 
         this.audio.src = track.stream_url;
+        if (startSec > 0) {
+            this.audio.currentTime = startSec;
+        }
         this.audio.play().then(() => {
             State.set('isPlaying', true);
             UI.showToast(`Playing: ${track.title}`, 'music');
@@ -536,20 +672,38 @@ const App = {
             return;
         }
 
+        let willPlay = false;
+
         if (track.provider_id === 'youtube') {
             if (!this.ytPlayer) return;
             const ytState = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
             if (ytState === 1) {
                 this.ytPlayer.pauseVideo();
+                willPlay = false;
             } else {
                 this.ytPlayer.playVideo();
+                willPlay = true;
             }
         } else {
             if (this.audio.paused) {
                 this.audio.play();
+                willPlay = true;
             } else {
                 this.audio.pause();
+                willPlay = false;
             }
+        }
+
+        // Real-time broadcast if Jam host
+        const activeJam = State.get('activeJamRoom');
+        const isHost = State.get('isJamHost');
+        if (activeJam && isHost && this.socket) {
+            const currentPos = State.get('currentTime') || 0;
+            this.socket.emit('jam_playback_control', {
+                room_id: activeJam.id,
+                action: willPlay ? 'play' : 'pause',
+                position: currentPos
+            });
         }
     },
 
@@ -892,10 +1046,45 @@ const App = {
         try {
             const data = await API.getJamRoom(roomId);
             State.set('activeJamRoom', data.room);
+            State.set('isJamHost', data.is_host);
+            State.set('jamCurrentTrack', data.current_track);
             UI.renderJamRoom(data);
+
+            // Connect to real-time socket room
+            if (this.socket) {
+                this.socket.emit('join_jam', {
+                    room_id: roomId,
+                    user: State.get('user')
+                });
+            }
+
+            // If listener and host is already playing a track, auto-start in sync
+            if (!data.is_host && data.current_track) {
+                const pos = data.room.playback_position || 0;
+                if (data.room.playback_status === 'playing') {
+                    UI.showToast(`🎧 Synchronizing with host track: ${data.current_track.title}`, 'music');
+                    this.playTrack(data.current_track, { fromJam: true, startPosition: pos });
+                }
+            }
         } catch (err) {
             UI.showToast(err.message || 'Failed to load Jam room', 'error');
         }
+    },
+
+    syncWithHostNow() {
+        const activeJam = State.get('activeJamRoom');
+        if (!activeJam) return;
+        API.getJamRoom(activeJam.id).then(data => {
+            if (data.current_track) {
+                const pos = data.room.playback_position || 0;
+                UI.showToast(`🎧 Syncing audio with host...`, 'music');
+                this.playTrack(data.current_track, { fromJam: true, startPosition: pos });
+            } else {
+                UI.showToast('Host has not started a song yet. Ask them to search and play a song!', 'info');
+            }
+        }).catch(err => {
+            UI.showToast(err.message || 'Sync failed', 'error');
+        });
     },
 
     async regenerateJamCode(roomId) {
@@ -952,8 +1141,16 @@ const App = {
             clearInterval(this.jamTimer);
             this.jamTimer = null;
         }
+        if (this.socket) {
+            this.socket.emit('leave_jam', {
+                room_id: roomId,
+                user: State.get('user')
+            });
+        }
         await API.leaveJam(roomId).catch(() => {});
         State.set('activeJamRoom', null);
+        State.set('isJamHost', false);
+        State.set('jamCurrentTrack', null);
         if (isHost) {
             UI.showToast('Stepped out. Your Jam room remains active until you choose to end it.', 'info');
         } else {
@@ -972,8 +1169,16 @@ const App = {
                 clearInterval(this.jamTimer);
                 this.jamTimer = null;
             }
+            if (this.socket) {
+                this.socket.emit('leave_jam', {
+                    room_id: roomId,
+                    user: State.get('user')
+                });
+            }
             await API.endJam(roomId);
             State.set('activeJamRoom', null);
+            State.set('isJamHost', false);
+            State.set('jamCurrentTrack', null);
             UI.showToast('Jam room has been ended and closed.', 'success');
             this.navigateTo('jams');
         } catch (err) {
