@@ -51,17 +51,25 @@ class MusicWaveRecommendationEngine:
         genre = (track.get('genre') or '').lower()
         combined = f"{title} {artist} {genre}"
 
-        is_punjabi = any(k in combined for k in ['punjabi', 'moosewala', 'diljit', 'aujla', 'dhillon', 'shubh', 'bhangra'])
-        is_retro = any(k in combined for k in ['retro', 'kishore', 'lata', 'rafi', 'mukesh', 'burman', '70s', '80s', '90s', 'purane'])
-        is_lofi = any(k in combined for k in ['lofi', 'lo-fi', 'slowed', 'reverb', 'chill', 'study', 'relax'])
-        is_sad = any(k in combined for k in ['sad', 'dard', 'judai', 'heartbreak', 'broken', 'cry', 'emotional', 'slow'])
-        is_pop = any(k in combined for k in ['pop', 'swift', 'weeknd', 'sheeran', 'drake', 'billie'])
+        is_bollywood = any(k in combined for k in ['bollywood', 'hindi', 'arijit', 'atif', 'shreya', 'pritam', 'kumar sanu', 'sonu nigam', 'filmi', 't-series', 'zeemusic', 'jubin', 'neha kakkar', 'badshah', 'vishal'])
+        is_punjabi = any(k in combined for k in ['punjabi', 'moosewala', 'diljit', 'aujla', 'dhillon', 'shubh', 'bhangra', 'sidhu', 'ammy virk', 'karan'])
+        is_hiphop = any(k in combined for k in ['hip-hop', 'hip hop', 'hiphop', 'rap', 'trap', 'emiway', 'raftaar', 'krsna', 'divine', 'mc stan', 'drake', 'eminem'])
+        is_retro = any(k in combined for k in ['retro', 'kishore', 'lata', 'rafi', 'mukesh', 'burman', '70s', '80s', '90s', 'purane', 'classic', 'old hindi'])
+        is_lofi = any(k in combined for k in ['lofi', 'lo-fi', 'slowed', 'reverb', 'chill', 'study', 'relax', 'chillhop', 'ambient'])
+        is_sad = any(k in combined for k in ['sad', 'dard', 'judai', 'heartbreak', 'broken', 'cry', 'emotional', 'slowed', 'alone'])
+        is_rock = any(k in combined for k in ['rock', 'metal', 'guitar', 'linkin', 'queen', 'acdc', 'nirvana'])
+        is_pop = any(k in combined for k in ['pop', 'swift', 'weeknd', 'sheeran', 'drake', 'billie', 'dua lipa', 'bieber'])
 
         dominant_genre = 'general'
-        if is_punjabi: dominant_genre = 'punjabi'
+        if genre and any(g in genre for g in ['bollywood', 'punjabi', 'hip-hop', 'lo-fi', 'pop', 'rock', 'retro', 'sad', 'classical', 'electronic']):
+            dominant_genre = genre.strip()
+        elif is_bollywood: dominant_genre = 'bollywood'
+        elif is_punjabi: dominant_genre = 'punjabi'
+        elif is_hiphop: dominant_genre = 'hip-hop'
         elif is_retro: dominant_genre = 'retro'
         elif is_lofi: dominant_genre = 'lo-fi'
         elif is_sad: dominant_genre = 'sad'
+        elif is_rock: dominant_genre = 'rock'
         elif is_pop: dominant_genre = 'pop'
 
         return {

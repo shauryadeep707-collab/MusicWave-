@@ -260,15 +260,16 @@ def regenerate_join_code(room_id):
 @jams_bp.route('/<room_id>/sync', methods=['POST'], strict_slashes=False)
 def sync_playback(room_id):
     """Host action: Sync currently playing track & playback position to all listeners."""
-    user_id = get_auth_user_id(auto_create_guest=True)
     room = query_db("SELECT * FROM jam_rooms WHERE id = ?", (room_id,), one=True)
     if not room:
         return jsonify({'error': 'Room not found'}), 404
 
-    if room['host_id'] != user_id:
+    data = request.get_json() or {}
+    user_id = get_auth_user_id() or data.get('user_id') or data.get('host_id') or get_auth_user_id(auto_create_guest=True)
+
+    if user_id and int(room['host_id']) != int(user_id):
         return jsonify({'error': 'Only host can broadcast playback state'}), 403
 
-    data = request.get_json() or {}
     track_id = data.get('track_id')
     status = data.get('playback_status', 'playing')
     pos = float(data.get('playback_position', 0.0))
@@ -279,7 +280,23 @@ def sync_playback(room_id):
         WHERE id = ?
     """, (track_id, status, pos, room_id))
 
-    return jsonify({'status': 'synced'}), 200
+    # Also broadcast to WebSocket clients in this room
+    try:
+        from backend import socketio
+        track = None
+        if track_id:
+            track = query_db("SELECT * FROM tracks WHERE id = ?", (track_id,), one=True)
+        if track:
+            socketio.emit('jam_track_changed', {
+                'room_id': room_id,
+                'track': track,
+                'position': pos,
+                'status': status
+            }, to=room_id)
+    except Exception as se:
+        print(f"[Socket broadcast error in sync]: {se}")
+
+    return jsonify({'status': 'synced', 'room_id': room_id, 'track_id': track_id, 'playback_status': status}), 200
 
 @jams_bp.route('/<room_id>/leave', methods=['POST'], strict_slashes=False)
 def leave_jam(room_id):

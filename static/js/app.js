@@ -182,6 +182,15 @@ const App = {
             this.stopYtProgressTracker();
         } else if (event.data === 0) {
             this.stopYtProgressTracker();
+            const activeJam = State.get('activeJamRoom');
+            const isHost = State.get('isJamHost');
+
+            // In a Jam room, listeners synchronize to the host's queue; only host commands auto-next
+            if (activeJam && !isHost) {
+                this.syncWithHostNow();
+                return;
+            }
+
             const repeatMode = State.get('repeatMode');
             if (repeatMode === 'one' && this.ytPlayer) {
                 this.ytPlayer.seekTo(0);
@@ -241,6 +250,15 @@ const App = {
         });
 
         audio.addEventListener('ended', () => {
+            const activeJam = State.get('activeJamRoom');
+            const isHost = State.get('isJamHost');
+
+            // In a Jam room, listeners synchronize to the host's queue; only host commands auto-next
+            if (activeJam && !isHost) {
+                this.syncWithHostNow();
+                return;
+            }
+
             const repeatMode = State.get('repeatMode');
             if (repeatMode === 'one') {
                 audio.currentTime = 0;
@@ -422,15 +440,25 @@ const App = {
                     this.audio.currentTime = targetSec;
                 }
 
-                // If host of active Jam, broadcast scrubbed position to all listeners
+                // If host of active Jam, broadcast scrubbed position to all listeners via socket & HTTP sync
                 const activeJam = State.get('activeJamRoom');
                 const isHost = State.get('isJamHost');
-                if (activeJam && isHost && this.socket) {
-                    this.socket.emit('jam_playback_control', {
-                        room_id: activeJam.id,
-                        action: 'seek',
-                        position: targetSec
-                    });
+                if (activeJam && isHost) {
+                    if (this.socket) {
+                        this.socket.emit('jam_playback_control', {
+                            room_id: activeJam.id,
+                            action: 'seek',
+                            position: targetSec
+                        });
+                    }
+                    API.request(`/api/jams/${activeJam.id}/sync`, {
+                        method: 'POST',
+                        body: {
+                            track_id: track?.id,
+                            playback_status: State.get('isPlaying') ? 'playing' : 'paused',
+                            playback_position: targetSec
+                        }
+                    }).catch(() => {});
                 }
             });
         }
@@ -582,6 +610,15 @@ const App = {
                     position: 0.0
                 });
             }
+            // Dual-channel reliability: also update backend room state via HTTP
+            API.request(`/api/jams/${activeJam.id}/sync`, {
+                method: 'POST',
+                body: {
+                    track_id: track.id,
+                    playback_status: 'playing',
+                    playback_position: 0.0
+                }
+            }).catch(() => {});
         }
 
         // Train recommendation transition matrix: previousTrack -> currentTrack
@@ -709,13 +746,23 @@ const App = {
         // Real-time broadcast if Jam host
         const activeJam = State.get('activeJamRoom');
         const isHost = State.get('isJamHost');
-        if (activeJam && isHost && this.socket) {
+        if (activeJam && isHost) {
             const currentPos = State.get('currentTime') || 0;
-            this.socket.emit('jam_playback_control', {
-                room_id: activeJam.id,
-                action: willPlay ? 'play' : 'pause',
-                position: currentPos
-            });
+            if (this.socket) {
+                this.socket.emit('jam_playback_control', {
+                    room_id: activeJam.id,
+                    action: willPlay ? 'play' : 'pause',
+                    position: currentPos
+                });
+            }
+            API.request(`/api/jams/${activeJam.id}/sync`, {
+                method: 'POST',
+                body: {
+                    track_id: track.id,
+                    playback_status: willPlay ? 'playing' : 'paused',
+                    playback_position: currentPos
+                }
+            }).catch(() => {});
         }
     },
 
@@ -1147,6 +1194,9 @@ const App = {
                 });
             }
 
+            // Start dual-channel synchronization engine for 100% reliable continuous sync
+            this.startJamSyncPoller(roomId);
+
             // If listener and host is already playing a track, auto-start in sync
             if (!data.is_host && data.current_track) {
                 const pos = data.room.playback_position || 0;
@@ -1160,16 +1210,167 @@ const App = {
         }
     },
 
+    startJamSyncPoller(roomId) {
+        this.stopJamSyncPoller();
+        this.jamPoller = setInterval(async () => {
+            const activeJam = State.get('activeJamRoom');
+            if (!activeJam || activeJam.id !== roomId) {
+                this.stopJamSyncPoller();
+                return;
+            }
+
+            const isHost = State.get('isJamHost');
+            // Listeners automatically synchronize to the host's room state
+            if (isHost) return;
+
+            try {
+                const data = await API.getJamRoom(roomId);
+                if (!data || !data.room) return;
+
+                // Host ended room
+                if (data.room.is_active === false) {
+                    UI.showToast('The Jam host has ended this listening party.', 'info');
+                    this.leaveCurrentJam(roomId, false);
+                    return;
+                }
+
+                const hostTrack = data.current_track;
+                const hostStatus = data.room.playback_status || 'paused';
+                const hostPos = parseFloat(data.room.playback_position || 0.0);
+                const currentTrack = State.get('currentTrack');
+                const isPlaying = State.get('isPlaying');
+
+                if (hostTrack) {
+                    const isNewTrack = !currentTrack ||
+                        (hostTrack.id && currentTrack.id && hostTrack.id !== currentTrack.id) ||
+                        (hostTrack.provider_track_id && currentTrack.provider_track_id && hostTrack.provider_track_id !== currentTrack.provider_track_id) ||
+                        (hostTrack.title !== currentTrack.title);
+
+                    if (isNewTrack) {
+                        console.log('[Jam Sync Poller] Detected new host track:', hostTrack.title);
+                        UI.showToast(`🎧 Jam Host started: ${hostTrack.title}`, 'music');
+                        State.set('jamCurrentTrack', hostTrack);
+                        let startSec = hostPos;
+                        if (hostStatus === 'playing' && data.room.playback_updated_at) {
+                            const updatedTime = new Date(data.room.playback_updated_at).getTime();
+                            if (!isNaN(updatedTime)) {
+                                const elapsed = Math.max(0, (Date.now() - updatedTime) / 1000);
+                                const dur = hostTrack.duration || 300;
+                                if (elapsed < dur) {
+                                    startSec = Math.min(dur - 2, hostPos + elapsed);
+                                }
+                            }
+                        }
+                        this.playTrack(hostTrack, { fromJam: true, startPosition: startSec });
+                        return;
+                    }
+
+                    // Same track: sync play/pause status
+                    if (hostStatus === 'paused' && isPlaying) {
+                        if (this.ytPlayer && this.ytPlayer.pauseVideo) this.ytPlayer.pauseVideo();
+                        if (this.audio) this.audio.pause();
+                        State.set('isPlaying', false);
+                    } else if (hostStatus === 'playing' && !isPlaying) {
+                        if (hostTrack.provider_id === 'youtube') {
+                            if (this.ytPlayer && this.ytPlayer.playVideo) this.ytPlayer.playVideo();
+                        } else if (this.audio) {
+                            this.audio.play()
+                                .then(() => State.set('isPlaying', true))
+                                .catch(() => this.showJamTuneInBanner(hostTrack));
+                        }
+                    }
+
+                    // Drift alignment (> 4s drift)
+                    const myPos = State.get('currentTime') || 0;
+                    if (hostStatus === 'playing' && Math.abs(myPos - hostPos) > 4) {
+                        if (hostTrack.provider_id === 'youtube') {
+                            if (this.ytPlayer && this.ytPlayer.seekTo) this.ytPlayer.seekTo(hostPos, true);
+                        } else if (this.audio) {
+                            this.audio.currentTime = hostPos;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Background sync error tolerance
+            }
+        }, 2200);
+    },
+
+    stopJamSyncPoller() {
+        if (this.jamPoller) {
+            clearInterval(this.jamPoller);
+            this.jamPoller = null;
+        }
+    },
+
+    showJamTuneInBanner(track) {
+        let banner = document.getElementById('jam-tune-in-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'jam-tune-in-banner';
+            banner.style.cssText = `
+                position: fixed;
+                bottom: 100px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: linear-gradient(135deg, #8b5cf6, #ec4899);
+                color: #fff;
+                padding: 12px 24px;
+                border-radius: 30px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 20px rgba(139,92,246,0.6);
+                z-index: 99999;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                font-weight: 600;
+                font-size: 0.92rem;
+                cursor: pointer;
+            `;
+            document.body.appendChild(banner);
+        }
+        banner.innerHTML = `
+            <span>🎧 Jam Playing: <strong>${track.title || 'Live Music'}</strong></span>
+            <button style="background: #fff; color: #1e1035; border: none; padding: 6px 14px; border-radius: 20px; font-weight: bold; cursor: pointer; font-size: 0.85rem;" onclick="App.unmuteAndSyncJam()">
+                ▶ Tap to Listen Along
+            </button>
+        `;
+        banner.style.display = 'flex';
+    },
+
+    hideJamTuneInBanner() {
+        const banner = document.getElementById('jam-tune-in-banner');
+        if (banner) banner.style.display = 'none';
+    },
+
+    unmuteAndSyncJam() {
+        this.hideJamTuneInBanner();
+        const current = State.get('currentTrack');
+        if (current) {
+            if (current.provider_id === 'youtube') {
+                if (this.ytPlayer && this.ytPlayer.playVideo) {
+                    this.ytPlayer.playVideo();
+                    State.set('isPlaying', true);
+                }
+            } else if (this.audio) {
+                this.audio.play().then(() => {
+                    State.set('isPlaying', true);
+                }).catch(() => {});
+            }
+        } else {
+            this.syncWithHostNow();
+        }
+    },
+
     syncWithHostNow() {
         const activeJam = State.get('activeJamRoom');
         if (!activeJam) return;
         API.getJamRoom(activeJam.id).then(data => {
             if (data.current_track) {
                 const pos = data.room.playback_position || 0;
-                UI.showToast(`🎧 Syncing audio with host...`, 'music');
+                UI.showToast(`🎧 Syncing audio with host: ${data.current_track.title}...`, 'music');
                 this.playTrack(data.current_track, { fromJam: true, startPosition: pos });
             } else {
-                UI.showToast('Host has not started a song yet. Ask them to search and play a song!', 'info');
+                UI.showToast('Host has not started a song yet. Waiting for host...', 'info');
             }
         }).catch(err => {
             UI.showToast(err.message || 'Sync failed', 'error');
@@ -1226,6 +1427,8 @@ const App = {
     },
 
     async leaveCurrentJam(roomId, isHost = false) {
+        this.stopJamSyncPoller();
+        this.hideJamTuneInBanner();
         if (this.jamTimer) {
             clearInterval(this.jamTimer);
             this.jamTimer = null;
@@ -1254,6 +1457,8 @@ const App = {
 
         try {
             UI.showToast('Ending Jam room...', 'info');
+            this.stopJamSyncPoller();
+            this.hideJamTuneInBanner();
             if (this.jamTimer) {
                 clearInterval(this.jamTimer);
                 this.jamTimer = null;
