@@ -1,14 +1,19 @@
 /**
  * MusicWave - Unified API Client
- * Clean Fetch API wrapper with standardized error handling
+ * Clean Fetch API wrapper with standardized error handling and permanent session persistence
  */
 const API = {
     async request(endpoint, options = {}) {
+        const storedUserId = localStorage.getItem('musicwave_user_id');
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(storedUserId ? { 'X-User-Id': storedUserId } : {}),
+            ...options.headers
+        };
+
         const config = {
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
+            headers,
+            credentials: 'include',
             ...options
         };
 
@@ -34,7 +39,7 @@ const API = {
         }
     },
 
-    // Auth Endpoints
+    // Auth Endpoints (Permanent Lifetime Session)
     getMe() {
         return this.request('/api/auth/me');
     },
@@ -80,14 +85,23 @@ const API = {
         });
     },
 
-    // Playlists
+    // Playlists & Smart Auto-Sort
     getPlaylists() {
         return this.request('/api/playlists/');
+    },
+    getPlaylistTracks(playlistId) {
+        return this.request(`/api/playlists/${playlistId}/tracks`);
     },
     createPlaylist(title, description, isPublic = true) {
         return this.request('/api/playlists/', {
             method: 'POST',
             body: { title, description, is_public: isPublic }
+        });
+    },
+    autoSortTrack(trackId, query = '', title = '', artist = '') {
+        return this.request('/api/playlists/auto-sort', {
+            method: 'POST',
+            body: { track_id: trackId, query, title, artist }
         });
     },
 

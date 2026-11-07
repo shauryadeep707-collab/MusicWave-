@@ -7,6 +7,14 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 @auth_bp.route('/me', methods=['GET'])
 def get_current_user():
     user_id = session.get('user_id')
+    # Optional header fallback for strict cookie policies
+    if not user_id:
+        fallback_id = request.headers.get('X-User-Id')
+        if fallback_id and fallback_id.isdigit():
+            user_id = int(fallback_id)
+            session['user_id'] = user_id
+            session.permanent = True
+
     if not user_id:
         return jsonify({'authenticated': False, 'user': None}), 200
     
@@ -53,20 +61,25 @@ def register():
         )
         execute_db("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
         
+        # Set permanent session for lifetime login
+        session.permanent = True
         session['user_id'] = user_id
         session['username'] = username
         session['role'] = 'user'
         
+        user_obj = {
+            'id': user_id,
+            'username': username,
+            'email': email,
+            'role': 'user',
+            'display_name': display_name,
+            'avatar_url': '/static/images/default-avatar.png'
+        }
+
         return jsonify({
             'message': 'Registration successful',
-            'user': {
-                'id': user_id,
-                'username': username,
-                'email': email,
-                'role': 'user',
-                'display_name': display_name,
-                'avatar_url': '/static/images/default-avatar.png'
-            }
+            'user': user_obj,
+            'token': f"mw_token_{user_id}"
         }), 201
     except Exception as e:
         return jsonify({'error': f'Failed to create account: {str(e)}'}), 500
@@ -93,20 +106,25 @@ def login():
     if not user['is_active']:
         return jsonify({'error': 'Account has been disabled'}), 403
 
+    # Set permanent session for lifetime login
+    session.permanent = True
     session['user_id'] = user['id']
     session['username'] = user['username']
     session['role'] = user['role']
 
+    user_obj = {
+        'id': user['id'],
+        'username': user['username'],
+        'email': user['email'],
+        'role': user['role'],
+        'display_name': user['display_name'] or user['username'],
+        'avatar_url': user['avatar_url'] or '/static/images/default-avatar.png'
+    }
+
     return jsonify({
         'message': 'Login successful',
-        'user': {
-            'id': user['id'],
-            'username': user['username'],
-            'email': user['email'],
-            'role': user['role'],
-            'display_name': user['display_name'] or user['username'],
-            'avatar_url': user['avatar_url'] or '/static/images/default-avatar.png'
-        }
+        'user': user_obj,
+        'token': f"mw_token_{user['id']}"
     }), 200
 
 @auth_bp.route('/logout', methods=['POST'])

@@ -224,22 +224,32 @@ const UI = {
         });
     },
 
-    // Render Search View
+    // Render Search View with typo tolerance
     renderSearch(query = '') {
+        State.set('lastSearchQuery', query);
         const container = document.getElementById('main-content');
         container.innerHTML = `
             <div class="section-header">
-                <h1 class="section-title">${query ? `Search results for "${query}"` : 'Search Music'}</h1>
+                <div>
+                    <h1 class="section-title">${query ? `Search results for "${query}"` : 'Search Music'}</h1>
+                    <div id="search-spell-correction" style="font-size: 0.88rem; color: var(--accent-amber); margin-top: 4px;"></div>
+                </div>
             </div>
             <div id="search-results-container">
-                ${query ? '<div style="color: var(--text-muted); padding: 20px;">Searching across legal music providers...</div>' : '<p style="color: var(--text-secondary);">Type in the search bar above to find tracks, artists, genres, or Jam rooms.</p>'}
+                ${query ? '<div style="color: var(--text-muted); padding: 20px;">Searching across all songs and providers...</div>' : '<p style="color: var(--text-secondary);">Type any song title, artist, or genre above to find and play music.</p>'}
             </div>
         `;
 
         if (query) {
             API.search(query).then(res => {
                 const resultsEl = document.getElementById('search-results-container');
+                const correctionEl = document.getElementById('search-spell-correction');
                 if (!resultsEl) return;
+
+                if (res.correction && correctionEl) {
+                    correctionEl.innerHTML = `✨ Showing results for <strong>${res.correction}</strong> (auto-corrected from "${query}")`;
+                }
+
                 if (res.results && res.results.length > 0) {
                     resultsEl.innerHTML = `
                         <div class="grid-cards">
@@ -260,52 +270,137 @@ const UI = {
         }
     },
 
-    // Render Library View
+    // Render Library View (Smart Mixes & Custom Playlists)
     renderLibrary() {
         const container = document.getElementById('main-content');
         const user = State.get('user');
         container.innerHTML = `
             <div class="section-header">
-                <h1 class="section-title">Your Library</h1>
-                ${user ? '<button class="btn-primary" onclick="App.openCreatePlaylistModal()">+ New Playlist</button>' : ''}
+                <div>
+                    <h1 class="section-title">Your Library</h1>
+                    <p style="color: var(--text-secondary); font-size: 0.88rem; margin-top: 4px;">Smart auto-curated playlists and your personal custom collections.</p>
+                </div>
+                ${user ? '<button class="btn-primary" onclick="App.openCreatePlaylistModal()">+ New Custom Playlist</button>' : ''}
             </div>
+
             ${!user ? `
                 <div style="padding: 40px; text-align: center; background: var(--bg-surface); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);">
-                    <h3 style="margin-bottom: 8px;">Sign in to unlock cloud library</h3>
-                    <p style="color: var(--text-secondary); margin-bottom: 20px;">Save playlists, sync favourites, and invite friends to Jam rooms across all your devices.</p>
+                    <h3 style="margin-bottom: 8px;">Sign in to view your library & smart mixes</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 20px;">Keep your account logged in permanently on this laptop and auto-sort every song you listen to.</p>
                     <button class="btn-primary" onclick="App.openAuthModal('login')">Sign In</button>
                 </div>
             ` : `
-                <div class="grid-cards" id="library-playlists-grid">
-                    <div style="color: var(--text-muted);">Loading playlists...</div>
-                </div>
+                <!-- 1. Smart Auto-Generated Playlists (By Genre & Mood) -->
+                <section style="margin-bottom: 36px;">
+                    <div class="section-header">
+                        <h2 class="section-title" style="font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">
+                            <span>✨ Smart Mixes</span>
+                            <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: var(--primary); font-size: 0.72rem;">Auto-Generated for You</span>
+                        </h2>
+                    </div>
+                    <div class="grid-cards" id="library-smart-playlists-grid">
+                        <div style="color: var(--text-muted); padding: 10px;">Loading smart mixes...</div>
+                    </div>
+                </section>
+
+                <!-- 2. User Custom Playlists -->
+                <section style="margin-bottom: 36px;">
+                    <div class="section-header">
+                        <h2 class="section-title" style="font-size: 1.15rem;">Your Custom Playlists</h2>
+                    </div>
+                    <div class="grid-cards" id="library-custom-playlists-grid">
+                        <div style="color: var(--text-muted); padding: 10px;">Loading custom playlists...</div>
+                    </div>
+                </section>
             `}
         `;
 
         if (user) {
             API.getPlaylists().then(res => {
-                const grid = document.getElementById('library-playlists-grid');
-                if (grid && res.playlists) {
-                    if (res.playlists.length > 0) {
-                        grid.innerHTML = res.playlists.map(p => `
+                const smartGrid = document.getElementById('library-smart-playlists-grid');
+                const customGrid = document.getElementById('library-custom-playlists-grid');
+
+                // Render Smart Playlists
+                if (smartGrid) {
+                    const smartList = res.smart_playlists || [];
+                    if (smartList.length > 0) {
+                        smartGrid.innerHTML = smartList.map(p => `
                             <div class="music-card" onclick="App.openPlaylist(${p.id})">
                                 <div class="music-card-cover-wrapper">
-                                    <img src="${p.cover_url}" class="music-card-cover" alt="${p.title}"/>
+                                    <img src="${p.cover_url || '/static/images/default-playlist.png'}" class="music-card-cover" alt="${p.title}"/>
+                                </div>
+                                <div class="music-card-title truncate">${p.title}</div>
+                                <div class="music-card-subtitle truncate">${p.track_count} tracks • Auto-sorted</div>
+                            </div>
+                        `).join('');
+                    } else {
+                        smartGrid.innerHTML = `
+                            <div style="grid-column: 1/-1; padding: 24px; text-align: center; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px dashed var(--border-subtle); color: var(--text-secondary);">
+                                Search and play Punjabi, Retro, Bollywood, or Sad songs to see them automatically sorted into smart playlists here!
+                            </div>
+                        `;
+                    }
+                }
+
+                // Render Custom Playlists
+                if (customGrid) {
+                    const customList = res.custom_playlists || [];
+                    if (customList.length > 0) {
+                        customGrid.innerHTML = customList.map(p => `
+                            <div class="music-card" onclick="App.openPlaylist(${p.id})">
+                                <div class="music-card-cover-wrapper">
+                                    <img src="${p.cover_url || '/static/images/default-playlist.png'}" class="music-card-cover" alt="${p.title}"/>
                                 </div>
                                 <div class="music-card-title truncate">${p.title}</div>
                                 <div class="music-card-subtitle truncate">${p.track_count} tracks</div>
                             </div>
                         `).join('');
                     } else {
-                        grid.innerHTML = `
-                            <div style="grid-column: 1/-1; padding: 30px; text-align: center; color: var(--text-secondary);">
-                                You haven't created any playlists yet. Click "+ New Playlist" to start!
+                        customGrid.innerHTML = `
+                            <div style="grid-column: 1/-1; padding: 24px; text-align: center; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px dashed var(--border-subtle); color: var(--text-secondary);">
+                                No custom playlists yet. Click "+ New Custom Playlist" to create one.
                             </div>
                         `;
                     }
                 }
             });
         }
+    },
+
+    // Render Playlist Detail View (Tracks in the Playlist)
+    renderPlaylistView(playlist, tracks) {
+        const container = document.getElementById('main-content');
+        container.innerHTML = `
+            <div style="display: flex; align-items: flex-end; gap: 24px; margin-bottom: 32px; padding: 24px; background: linear-gradient(180deg, rgba(139, 92, 246, 0.15) 0%, transparent 100%); border-radius: var(--radius-lg);">
+                <img src="${playlist.cover_url || '/static/images/default-playlist.png'}" style="width: 140px; height: 140px; border-radius: var(--radius-md); object-fit: cover; box-shadow: var(--shadow-lg);" />
+                <div>
+                    <span class="badge" style="background: rgba(139, 92, 246, 0.25); color: var(--primary);">${playlist.is_auto_generated ? 'Smart Auto-Mix' : 'Custom Playlist'}</span>
+                    <h1 style="font-size: 2rem; font-weight: 800; margin: 8px 0;">${playlist.title}</h1>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem;">${playlist.description || ''}</p>
+                    <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 4px;">${tracks.length} tracks</p>
+                </div>
+            </div>
+
+            <div class="section-header">
+                <button class="btn-primary" onclick="App.playPlaylistFirstTrack()" ${tracks.length === 0 ? 'disabled' : ''}>
+                    <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    Play All
+                </button>
+                <button class="btn-secondary" onclick="App.navigateTo('library')">← Back to Library</button>
+            </div>
+
+            <div style="margin-top: 20px;">
+                ${tracks.length > 0 ? `
+                    <div class="grid-cards">
+                        ${tracks.map(t => this.createMusicCardHTML(t)).join('')}
+                    </div>
+                ` : `
+                    <div style="padding: 40px; text-align: center; color: var(--text-secondary); background: var(--bg-surface); border-radius: var(--radius-md);">
+                        This playlist has no tracks yet.
+                    </div>
+                `}
+            </div>
+        `;
     },
 
     // Render Downloads View (Offline Storage)
@@ -471,6 +566,7 @@ const UI = {
                         <h2 style="font-size: 1.3rem;">${user.display_name || user.username}</h2>
                         <p style="color: var(--text-muted);">@${user.username} • Role: ${user.role}</p>
                         <p style="font-size: 0.85rem; color: var(--text-secondary);">${user.email}</p>
+                        <p style="font-size: 0.8rem; color: var(--accent-emerald); margin-top: 4px;">🔒 Permanent Login Active on this Laptop</p>
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px;">
@@ -493,15 +589,20 @@ const UI = {
                     <h3 style="font-size: 1rem; margin-bottom: 4px;">Audio Playback Quality</h3>
                     <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px;">Select default streaming fidelity</p>
                     <select style="width: 100%; padding: 10px; border-radius: var(--radius-md);">
-                        <option value="high" selected>High (320kbps MP3 / Flac where available)</option>
+                        <option value="high" selected>High (320kbps MP3 / Flac / HD Audio)</option>
                         <option value="medium">Medium (192kbps)</option>
                         <option value="saver">Data Saver (128kbps)</option>
                     </select>
                 </div>
                 <div>
-                    <h3 style="font-size: 1rem; margin-bottom: 4px;">Offline Auto-Sync</h3>
-                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px;">Synchronize offline playback history and downloaded metadata when internet reconnects</p>
-                    <input type="checkbox" id="setting-auto-sync" checked style="width: 18px; height: 18px; accent-color: var(--primary);" />
+                    <h3 style="font-size: 1rem; margin-bottom: 4px;">Smart Playlist Auto-Sorting</h3>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px;">Automatically categorize searched songs into Punjabi, Retro, Bollywood, Sad, and Lo-fi smart playlists</p>
+                    <input type="checkbox" id="setting-auto-sort" checked style="width: 18px; height: 18px; accent-color: var(--primary);" />
+                </div>
+                <div>
+                    <h3 style="font-size: 1rem; margin-bottom: 4px;">Permanent Laptop Session</h3>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px;">Never log out automatically on this browser</p>
+                    <input type="checkbox" id="setting-permanent-session" checked disabled style="width: 18px; height: 18px; accent-color: var(--primary);" />
                 </div>
             </div>
         `;

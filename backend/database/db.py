@@ -179,6 +179,8 @@ def init_postgres_db():
             description TEXT,
             cover_url TEXT DEFAULT '/static/images/default-playlist.png',
             is_public BOOLEAN DEFAULT TRUE,
+            is_auto_generated BOOLEAN DEFAULT FALSE,
+            category VARCHAR(50),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );

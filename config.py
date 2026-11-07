@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from datetime import timedelta
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -9,6 +10,12 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "musicwave_default_secure_secret_key_2026")
     DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     PORT = int(os.getenv("PORT", 5000))
+
+    # Permanent Lifetime Session (10 Years)
+    PERMANENT_SESSION_LIFETIME = timedelta(days=3650)
+    SESSION_COOKIE_NAME = "musicwave_permanent_session"
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
     
     # Database (Supabase PostgreSQL or fallback to local SQLite)
     DATABASE_URL = os.getenv("DATABASE_URL", "").strip()

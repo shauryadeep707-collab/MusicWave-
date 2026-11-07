@@ -156,6 +156,8 @@ CREATE TABLE IF NOT EXISTS playlists (
     description TEXT,
     cover_url TEXT DEFAULT '/static/images/default-playlist.png',
     is_public BOOLEAN DEFAULT 1,
+    is_auto_generated BOOLEAN DEFAULT 0,
+    category VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

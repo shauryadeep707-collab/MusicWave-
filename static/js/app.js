@@ -280,10 +280,22 @@ const App = {
 
     async checkAuth() {
         try {
+            // Restore immediately from localStorage for permanent session continuity
+            const cachedUser = localStorage.getItem('musicwave_auth_user');
+            if (cachedUser) {
+                try {
+                    const parsed = JSON.parse(cachedUser);
+                    State.set('user', parsed);
+                    this.updateUserUI(parsed);
+                } catch (e) {}
+            }
+
             const res = await API.getMe();
             if (res.authenticated && res.user) {
                 State.set('user', res.user);
                 this.updateUserUI(res.user);
+                localStorage.setItem('musicwave_auth_user', JSON.stringify(res.user));
+                localStorage.setItem('musicwave_user_id', res.user.id);
             }
         } catch (e) {
             console.warn('Auth check skipped (offline or unauthenticated)');
@@ -360,6 +372,10 @@ const App = {
             UI.showToast('Invalid track selection', 'error');
             return;
         }
+
+        // Auto-sort track into mood/genre smart playlists (Punjabi, Retro, Sad, etc.)
+        const lastQuery = State.get('lastSearchQuery') || '';
+        API.autoSortTrack(track.id, lastQuery, track.title, track.artist_name).catch(() => {});
 
         State.set('currentTrack', track);
 
@@ -561,6 +577,8 @@ const App = {
                 res = await API.register(username, email, pwd, username);
             }
             State.set('user', res.user);
+            localStorage.setItem('musicwave_auth_user', JSON.stringify(res.user));
+            localStorage.setItem('musicwave_user_id', res.user.id);
             this.updateUserUI(res.user);
             this.closeAuthModal();
             UI.showToast(`Welcome ${res.user.display_name || res.user.username}!`, 'success');
@@ -571,6 +589,8 @@ const App = {
 
     async logout() {
         await API.logout();
+        localStorage.removeItem('musicwave_auth_user');
+        localStorage.removeItem('musicwave_user_id');
         State.set('user', null);
         this.updateUserUI(null);
         this.navigateTo('home');
@@ -598,6 +618,28 @@ const App = {
             UI.showToast(`Playlist "${name}" created!`, 'success');
             this.navigateTo('library');
         }).catch(err => UI.showToast(err.message, 'error'));
+    },
+
+    async openPlaylist(playlistId) {
+        try {
+            const res = await API.getPlaylistTracks(playlistId);
+            if (res.playlist) {
+                State.set('activePlaylist', res.playlist);
+                State.set('activePlaylistTracks', res.tracks || []);
+                UI.renderPlaylistView(res.playlist, res.tracks || []);
+            }
+        } catch (err) {
+            UI.showToast(err.message || 'Failed to load playlist', 'error');
+        }
+    },
+
+    playPlaylistFirstTrack() {
+        const tracks = State.get('activePlaylistTracks') || [];
+        if (tracks.length > 0) {
+            State.set('queue', tracks);
+            State.set('queueIndex', 0);
+            this.playTrack(tracks[0]);
+        }
     }
 };
 
