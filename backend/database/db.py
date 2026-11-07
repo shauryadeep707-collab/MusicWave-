@@ -13,23 +13,49 @@ except ImportError:
     PSYCOPG2_AVAILABLE = False
 
 def is_postgres():
-    db_url = current_app.config.get('DATABASE_URL', '')
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            db_url = current_app.config.get('DATABASE_URL', '')
+        else:
+            from config import Config
+            db_url = getattr(Config, 'DATABASE_URL', '')
+    except Exception:
+        from config import Config
+        db_url = getattr(Config, 'DATABASE_URL', '')
     return bool(db_url and (db_url.startswith('postgresql://') or db_url.startswith('postgres://')))
 
 def get_db():
     """Retrieve or create a database connection for current request context."""
+    from flask import g, has_app_context
+    if not has_app_context():
+        # Fallback for worker threads or CLI scripts
+        if is_postgres():
+            from config import Config
+            db_url = Config.DATABASE_URL
+            if db_url.startswith('postgres://'):
+                db_url = db_url.replace('postgres://', 'postgresql://', 1)
+            return psycopg2.connect(db_url)
+        else:
+            from config import Config
+            db_path = Config.DATABASE_PATH
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON;")
+            return conn
+
     if 'db' not in g:
         if is_postgres():
             if not PSYCOPG2_AVAILABLE:
                 raise RuntimeError("psycopg2-binary is required for PostgreSQL/Supabase connections.")
-            db_url = current_app.config['DATABASE_URL']
-            # Supabase uses postgresql://, fix postgres:// if from legacy heroku/render format
+            db_url = current_app.config.get('DATABASE_URL', '')
             if db_url.startswith('postgres://'):
                 db_url = db_url.replace('postgres://', 'postgresql://', 1)
             g.db = psycopg2.connect(db_url)
             g.is_pg = True
         else:
-            db_path = current_app.config['DATABASE_PATH']
+            db_path = current_app.config.get('DATABASE_PATH', 'instance/musicwave.db')
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             g.db = sqlite3.connect(
                 db_path,

@@ -279,6 +279,9 @@ const App = {
         this.audio.play().then(() => {
             State.set('isPlaying', true);
             UI.showToast(`Playing: ${track.title}`, 'music');
+            if (track.id) {
+                API.recordPlay(track.id).catch(() => {});
+            }
         }).catch(err => {
             console.error('Autoplay prevented or stream error:', err);
             UI.showToast('Click play on player to start listening', 'info');

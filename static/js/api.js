@@ -64,6 +64,12 @@ const API = {
     getRecommendations(genre) {
         return this.request(`/api/music/recommendations${genre ? `?genre=${encodeURIComponent(genre)}` : ''}`);
     },
+    getByGenre(genre) {
+        return this.request(`/api/music/genre/${encodeURIComponent(genre)}`);
+    },
+    recordPlay(trackId) {
+        return this.request(`/api/music/track/${trackId}/play`, { method: 'POST' });
+    },
     search(query) {
         return this.request(`/api/music/search?q=${encodeURIComponent(query)}`);
     },
