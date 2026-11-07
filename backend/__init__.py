@@ -39,6 +39,7 @@ def create_app(config_class=Config):
     from backend.friends import friends_bp
     from backend.notifications import notifications_bp
     from backend.admin import admin_bp
+    from backend.recommendations import recommendations_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(music_bp)
@@ -49,6 +50,7 @@ def create_app(config_class=Config):
     app.register_blueprint(friends_bp)
     app.register_blueprint(notifications_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(recommendations_bp)
 
     # Health Check API
     @app.route('/api/health')

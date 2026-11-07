@@ -389,6 +389,12 @@ const App = {
             return;
         }
 
+        // Train recommendation transition matrix: previousTrack -> currentTrack
+        const previousTrack = State.get('currentTrack');
+        if (previousTrack && previousTrack.id && track.id && previousTrack.id !== track.id) {
+            API.recordTransition(previousTrack.id, track.id).catch(() => {});
+        }
+
         // Auto-sort track into mood/genre smart playlists (Punjabi, Retro, Sad, etc.)
         const lastQuery = State.get('lastSearchQuery') || '';
         API.autoSortTrack(track.id, lastQuery, track.title, track.artist_name).catch(() => {});
@@ -468,12 +474,50 @@ const App = {
         }
     },
 
-    nextTrack() {
-        const queue = State.get('queue');
+    async nextTrack() {
+        const queue = State.get('queue') || [];
         let idx = State.get('queueIndex') + 1;
         if (idx < queue.length && queue[idx]) {
             State.set('queueIndex', idx);
             this.playTrack(queue[idx]);
+        } else {
+            // Queue ended: seamlessly auto-predict and play the next song matching the previous track
+            await this.playNextRecommended();
+        }
+    },
+
+    async playNextRecommended() {
+        const current = State.get('currentTrack');
+        if (!current) return;
+
+        try {
+            UI.showToast(`✨ Finding next song matching "${current.title}"...`, 'info');
+            const recent = (State.get('queue') || []).map(t => t.id).filter(Boolean);
+            const res = await API.getNextRecommended(
+                current.id,
+                current.title,
+                current.artist_name,
+                current.genre || '',
+                recent
+            );
+
+            if (res && res.next_track) {
+                const queue = State.get('queue') || [];
+                queue.push(res.next_track);
+                State.set('queue', queue);
+                State.set('queueIndex', queue.length - 1);
+
+                if (current.id && res.next_track.id) {
+                    API.recordTransition(current.id, res.next_track.id).catch(() => {});
+                }
+
+                this.playTrack(res.next_track);
+                UI.showToast(`📻 Auto-Playing Next: ${res.next_track.title}`, 'music');
+            } else {
+                UI.showToast('No further recommendations available.', 'info');
+            }
+        } catch (e) {
+            console.warn('Auto-next recommendation failed:', e);
         }
     },
 

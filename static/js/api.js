@@ -89,6 +89,23 @@ const API = {
         });
     },
 
+    // Recommendation Engine & Auto-Next Transition
+    getNextRecommended(trackId, title = '', artist = '', genre = '', exclude = []) {
+        const params = new URLSearchParams();
+        if (trackId) params.append('current_track_id', trackId);
+        if (title) params.append('title', title);
+        if (artist) params.append('artist', artist);
+        if (genre) params.append('genre', genre);
+        if (exclude && exclude.length > 0) params.append('exclude', exclude.join(','));
+        return this.request(`/api/recommendations/next?${params.toString()}`);
+    },
+    recordTransition(fromTrackId, toTrackId) {
+        return this.request('/api/recommendations/transition', {
+            method: 'POST',
+            body: { from_track_id: fromTrackId, to_track_id: toTrackId }
+        });
+    },
+
     // Playlists & Smart Auto-Sort
     getPlaylists() {
         return this.request('/api/playlists/');

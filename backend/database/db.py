@@ -241,6 +241,21 @@ def init_postgres_db():
             votes_count INTEGER DEFAULT 0,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS song_transitions (
+            from_track_id INTEGER NOT NULL,
+            to_track_id INTEGER NOT NULL,
+            transition_count INTEGER DEFAULT 1,
+            last_transition_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (from_track_id, to_track_id)
+        );
+        CREATE TABLE IF NOT EXISTS user_taste_profiles (
+            user_id INTEGER NOT NULL,
+            genre VARCHAR(60) NOT NULL,
+            affinity_score REAL DEFAULT 1.0,
+            play_count INTEGER DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, genre)
+        );
         CREATE TABLE IF NOT EXISTS jam_messages (
             id SERIAL PRIMARY KEY,
             room_id VARCHAR(64) NOT NULL REFERENCES jam_rooms(id) ON DELETE CASCADE,

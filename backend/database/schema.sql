@@ -339,3 +339,22 @@ CREATE INDEX IF NOT EXISTS idx_history_user ON listening_history(user_id, listen
 CREATE INDEX IF NOT EXISTS idx_favourites_user ON favourites(user_id);
 CREATE INDEX IF NOT EXISTS idx_jam_active ON jam_rooms(is_active, is_public);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read, created_at DESC);
+
+-- Recommendation Engine: Markov Song-to-Song Transition Matrix
+CREATE TABLE IF NOT EXISTS song_transitions (
+    from_track_id INTEGER NOT NULL,
+    to_track_id INTEGER NOT NULL,
+    transition_count INTEGER DEFAULT 1,
+    last_transition_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (from_track_id, to_track_id)
+);
+
+-- Recommendation Engine: User Taste & Affinity Profiles
+CREATE TABLE IF NOT EXISTS user_taste_profiles (
+    user_id INTEGER NOT NULL,
+    genre VARCHAR(60) NOT NULL,
+    affinity_score REAL DEFAULT 1.0,
+    play_count INTEGER DEFAULT 1,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, genre)
+);

@@ -1,3 +1,4 @@
+from backend.search.normalizer import normalize_search_query, clean_title, clean_artist
 from flask import Blueprint, jsonify, request
 import re
 from backend.database.db import query_db, execute_db
@@ -45,16 +46,26 @@ def get_recommendations():
 
 @music_bp.route('/search', methods=['GET'])
 def search_tracks():
-    """Universal search across local cache, database, and external providers."""
+    """Universal search with typo-tolerance, lyrics normalizer & title cleaning."""
     q = request.args.get('q', '').strip()
     if not q:
-        return jsonify({'results': [], 'query': ''}), 200
+        return jsonify({'results': [], 'query': '', 'correction': None}), 200
     
     limit = int(request.args.get('limit', 25))
-    tracks = music_service.search(q, limit=limit)
+    norm = normalize_search_query(q)
+    search_term = norm['normalized'] if norm.get('was_corrected') else q
+
+    tracks = music_service.search(search_term, limit=limit)
     for t in tracks:
+        t['title'] = clean_title(t.get('title', ''))
+        t['artist_name'] = clean_artist(t.get('artist_name', ''))
         tag_track_version(t)
-    return jsonify({'results': tracks, 'query': q}), 200
+
+    return jsonify({
+        'results': tracks,
+        'query': q,
+        'correction': norm['normalized'] if norm.get('was_corrected') else None
+    }), 200
 
 @music_bp.route('/versions', methods=['GET'])
 def get_track_versions():
