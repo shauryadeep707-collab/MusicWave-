@@ -15,6 +15,12 @@ except ImportError:
 
 def is_postgres():
     try:
+        from flask import g
+        if hasattr(g, 'is_pg'):
+            return g.is_pg
+    except Exception:
+        pass
+    try:
         from flask import current_app, has_app_context
         if has_app_context():
             db_url = current_app.config.get('DATABASE_URL', '')
@@ -36,7 +42,16 @@ def get_db():
             db_url = Config.DATABASE_URL
             if db_url.startswith('postgres://'):
                 db_url = db_url.replace('postgres://', 'postgresql://', 1)
-            return psycopg2.connect(db_url)
+            try:
+                return psycopg2.connect(db_url, connect_timeout=5)
+            except Exception:
+                from config import Config
+                db_path = Config.DATABASE_PATH
+                os.makedirs(os.path.dirname(db_path), exist_ok=True)
+                conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA foreign_keys = ON;")
+                return conn
         else:
             from config import Config
             db_path = Config.DATABASE_PATH
@@ -48,13 +63,22 @@ def get_db():
 
     if 'db' not in g:
         if is_postgres():
-            if not PSYCOPG2_AVAILABLE:
-                raise RuntimeError("psycopg2-binary is required for PostgreSQL/Supabase connections.")
-            db_url = current_app.config.get('DATABASE_URL', '')
-            if db_url.startswith('postgres://'):
-                db_url = db_url.replace('postgres://', 'postgresql://', 1)
-            g.db = psycopg2.connect(db_url)
-            g.is_pg = True
+            try:
+                if not PSYCOPG2_AVAILABLE:
+                    raise RuntimeError("psycopg2-binary is required for PostgreSQL/Supabase connections.")
+                db_url = current_app.config.get('DATABASE_URL', '')
+                if db_url.startswith('postgres://'):
+                    db_url = db_url.replace('postgres://', 'postgresql://', 1)
+                g.db = psycopg2.connect(db_url, connect_timeout=5)
+                g.is_pg = True
+            except Exception as pg_err:
+                print(f"[PostgreSQL connection failed, auto-falling back to SQLite]: {pg_err}")
+                db_path = current_app.config.get('DATABASE_PATH', 'instance/musicwave.db')
+                os.makedirs(os.path.dirname(db_path), exist_ok=True)
+                g.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+                g.db.row_factory = sqlite3.Row
+                g.db.execute("PRAGMA foreign_keys = ON;")
+                g.is_pg = False
         else:
             db_path = current_app.config.get('DATABASE_PATH', 'instance/musicwave.db')
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
