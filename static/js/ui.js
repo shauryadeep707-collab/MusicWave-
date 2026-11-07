@@ -237,14 +237,19 @@ const UI = {
         });
     },
 
-    // Render Search View with typo tolerance
+    // Render Search View with typo tolerance & lyrics recognition
     renderSearch(query = '') {
         State.set('lastSearchQuery', query);
         const container = document.getElementById('main-content');
+        const isLyrics = query.trim().split(/\s+/).length >= 3;
+
         container.innerHTML = `
             <div class="section-header">
                 <div>
-                    <h1 class="section-title">${query ? `Search results for "${query}"` : 'Search Music'}</h1>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h1 class="section-title">${query ? `Search: "${query}"` : 'Search Music & Lyrics'}</h1>
+                        ${isLyrics ? '<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; font-size: 0.75rem;">🎤 Lyrics Search Active</span>' : ''}
+                    </div>
                     <div id="search-spell-correction" style="font-size: 0.88rem; color: var(--accent-amber); margin-top: 4px;"></div>
                 </div>
             </div>
@@ -256,10 +261,25 @@ const UI = {
                     <button class="search-version-tab" data-filter="lofi" onclick="UI.filterSearchResults('lofi')">☕ Lo-Fi / Slowed</button>
                 </div>
                 <div id="search-dual-version-container"></div>
-            ` : ''}
+            ` : `
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 32px; text-align: center; margin-top: 20px;">
+                    <div style="font-size: 2.2rem; margin-bottom: 12px;">🎤 🎵</div>
+                    <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 8px;">Search by Song Title or Lyrics Line</h2>
+                    <p style="color: var(--text-secondary); max-width: 620px; margin: 0 auto 20px auto; font-size: 0.92rem; line-height: 1.6;">
+                        Don't know the exact song title? <strong>Just type any line of lyrics from the song!</strong> MusicWave will recognize the lyrics and present the exact track in both Official Studio and Lo-Fi Chill versions.
+                    </p>
+                    <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <span style="font-size: 0.82rem; color: var(--text-muted); align-self: center;">Try typing lyrics:</span>
+                        <button class="search-version-tab" onclick="UI.triggerSearchExample('apna bana le piya')">🎤 "apna bana le piya"</button>
+                        <button class="search-version-tab" onclick="UI.triggerSearchExample('tere vaaste falak se main chaand')">🎤 "tere vaaste falak se"</button>
+                        <button class="search-version-tab" onclick="UI.triggerSearchExample('dil diyan gallan karange naal naal')">🎤 "dil diyan gallan"</button>
+                        <button class="search-version-tab" onclick="UI.triggerSearchExample('i took an arrow to the heart')">🎤 "i took an arrow to the heart"</button>
+                    </div>
+                </div>
+            `}
 
             <div id="search-results-container">
-                ${query ? '<div style="color: var(--text-muted); padding: 20px;">Searching across all songs and providers...</div>' : '<p style="color: var(--text-secondary);">Type any song title, artist, or genre above to find and play music.</p>'}
+                ${query ? '<div style="color: var(--text-muted); padding: 20px;">Searching across all songs, lyrics, and providers...</div>' : ''}
             </div>
         `;
 
