@@ -24,10 +24,19 @@ class Config:
     ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "ogg", "flac"}
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     
-    # Music Provider Settings
-    JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "")
+    # Music Provider Credentials & Switches
+    JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "").strip()
+    JAMENDO_CLIENT_SECRET = os.getenv("JAMENDO_CLIENT_SECRET", "").strip()
+    
     INTERNET_ARCHIVE_ENABLED = os.getenv("INTERNET_ARCHIVE_ENABLED", "true").lower() in ("true", "1", "yes")
+    
     FREE_MUSIC_ARCHIVE_ENABLED = os.getenv("FREE_MUSIC_ARCHIVE_ENABLED", "true").lower() in ("true", "1", "yes")
+    FREE_MUSIC_ARCHIVE_API_KEY = os.getenv("FREE_MUSIC_ARCHIVE_API_KEY", "").strip()
+    
+    SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
+    SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
+    
+    LASTFM_API_KEY = os.getenv("LASTFM_API_KEY", "").strip()
 
     @classmethod
     def init_folders(cls):
