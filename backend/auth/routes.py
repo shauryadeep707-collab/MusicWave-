@@ -98,11 +98,12 @@ def register():
     if existing_email:
         return jsonify({'error': f'An account with email "{email}" already exists. Please sign in instead.'}), 409
 
-    pwd_hash = generate_password_hash(password, method='pbkdf2:sha256:50000')
+    # Store plain password directly as requested (no hashing overhead)
+    pwd_to_store = password
     try:
         user_id, _ = execute_db(
             "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
-            (username, email, pwd_hash)
+            (username, email, pwd_to_store)
         )
         if not user_id:
             user_row = query_db("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,), one=True)
@@ -171,7 +172,11 @@ def login():
     if not user:
         return jsonify({'error': f'No account found matching "{identifier}". Please check for typos or click "Create One".'}), 401
 
-    if not check_password_hash(user['password_hash'], password):
+    stored_pwd = user.get('password_hash', '')
+    is_match = (stored_pwd == password) or (
+        stored_pwd.startswith('pbkdf2:') and check_password_hash(stored_pwd, password)
+    )
+    if not is_match:
         return jsonify({'error': 'Incorrect password. Please try again.'}), 401
 
     if not user.get('is_active', True):

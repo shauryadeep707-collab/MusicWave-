@@ -464,7 +464,7 @@ def seed_common_data(db, is_pg=False):
     cur.execute(admin_sql, ('admin',))
     admin = cur.fetchone()
     if not admin:
-        admin_pwd = generate_password_hash("admin123", method="pbkdf2:sha256")
+        admin_pwd = "admin123"
         if is_pg:
             cur.execute("""
                 INSERT INTO users (username, email, password_hash, role)
@@ -589,11 +589,11 @@ def create_guest_user():
             guest_username = f"Guest_{code}"
 
         guest_email = f"guest_{code}_{uuid.uuid4().hex[:6]}@musicwave.io"
-        pwd_hash = "pbkdf2:sha256:50000$BwzDs3I4x2qcQQ0G$4fedd057e898c806a9e8d531fc1b060dbf0601d5887304a75fba3275edb4007a"
+        pwd_plain = "guest_pass"
 
         user_id, _ = execute_db(
             "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
-            (guest_username, guest_email, pwd_hash)
+            (guest_username, guest_email, pwd_plain)
         )
         if not user_id:
             user_row = query_db("SELECT id FROM users WHERE username = ?", (guest_username,), one=True)
