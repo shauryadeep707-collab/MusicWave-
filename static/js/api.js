@@ -233,6 +233,15 @@ const API = {
             body: { track_id: trackId, playback_status: playbackStatus, playback_position: position }
         });
     },
+    getJamMessages(roomId) {
+        return this.request(`/api/jams/${roomId}/messages`);
+    },
+    sendJamMessage(roomId, content, messageType = 'chat') {
+        return this.request(`/api/jams/${roomId}/messages`, {
+            method: 'POST',
+            body: { content, message_type: messageType }
+        });
+    },
 
     // Friends
     getFriends() {

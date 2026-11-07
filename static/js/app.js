@@ -161,6 +161,22 @@ const App = {
                 }).catch(() => {});
             }
         });
+
+        // 6. Live Jam Chat message received
+        this.socket.on('jam_new_message', (data) => {
+            const activeJam = State.get('activeJamRoom');
+            if (activeJam && String(activeJam.id) === String(data.room_id)) {
+                UI.appendJamMessage(data);
+            }
+        });
+
+        // 7. Instant Flying Emoji Reaction received
+        this.socket.on('jam_reaction_broadcast', (data) => {
+            const activeJam = State.get('activeJamRoom');
+            if (activeJam && String(activeJam.id) === String(data.room_id)) {
+                UI.showFloatingReaction(data.emoji, data.user);
+            }
+        });
     },
 
     initYouTubePlayer() {
@@ -200,6 +216,17 @@ const App = {
         // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0
         if (event.data === 1) {
             State.set('isPlaying', true);
+            // Single song auto-guard: immediately reject any compilation/mix > 6:20 (e.g. 68:20)
+            if (this.ytPlayer && this.ytPlayer.getDuration) {
+                const dur = this.ytPlayer.getDuration();
+                if (dur > 380) {
+                    console.warn(`[Single Song Guard] Rejected compilation duration ${dur}s (${UI.formatTime(dur)}). Auto-skipping to single song...`);
+                    this.ytPlayer.stopVideo();
+                    UI.showToast(`⚠️ Skipped compilation (${UI.formatTime(dur)}). Playing single song...`, 'info');
+                    this.nextTrack(true);
+                    return;
+                }
+            }
             this.startYtProgressTracker();
         } else if (event.data === 2) {
             State.set('isPlaying', false);
@@ -231,6 +258,14 @@ const App = {
             if (this.ytPlayer && this.ytPlayer.getCurrentTime && this.ytPlayer.getDuration) {
                 const current = this.ytPlayer.getCurrentTime();
                 const duration = this.ytPlayer.getDuration();
+                // Continuous compilation guard
+                if (duration > 380) {
+                    this.stopYtProgressTracker();
+                    this.ytPlayer.stopVideo();
+                    UI.showToast(`⚠️ Skipped compilation (${UI.formatTime(duration)}). Playing single song...`, 'info');
+                    this.nextTrack(true);
+                    return;
+                }
                 State.set('currentTime', current);
                 State.set('duration', duration);
                 this.updateProgressBar(current, duration);
@@ -601,8 +636,12 @@ const App = {
     },
 
     navigateTo(page, param = null) {
+        this.closeMobileSidebar();
         State.set('activePage', page);
         UI.updateActiveNav(page);
+        document.querySelectorAll('.mobile-nav-item').forEach(el => {
+            el.classList.toggle('active', el.dataset.page === page);
+        });
         window.history.pushState({}, '', `/${page === 'home' ? '' : page}`);
 
         switch (page) {
@@ -644,10 +683,32 @@ const App = {
         }
     },
 
+    toggleMobileSidebar() {
+        const sidebar = document.querySelector('.app-sidebar');
+        const overlay = document.getElementById('mobile-drawer-overlay');
+        if (sidebar) sidebar.classList.toggle('mobile-open');
+        if (overlay) overlay.classList.toggle('active');
+    },
+
+    closeMobileSidebar() {
+        const sidebar = document.querySelector('.app-sidebar');
+        const overlay = document.getElementById('mobile-drawer-overlay');
+        if (sidebar) sidebar.classList.remove('mobile-open');
+        if (overlay) overlay.classList.remove('active');
+    },
+
     // Audio Playback Controls (Unified Native MP3 & YouTube)
     playTrack(track, options = {}) {
         if (!track) {
             UI.showToast('Invalid track selection', 'error');
+            return;
+        }
+
+        // Single track enforcement guard: prevent long compilations or multi-hour jukeboxes
+        if (track && !this.isSingleTrack(track)) {
+            console.warn('[Single Song Guard] Blocked compilation track:', track.title);
+            UI.showToast(`⚠️ Skipped compilation: "${track.title}". Auto-playing single song...`, 'info');
+            this.playNextRecommended();
             return;
         }
 
@@ -900,8 +961,17 @@ const App = {
 
     isSingleTrack(track) {
         if (!track) return false;
-        const dur = Number(track.duration) || 0;
-        if (dur > 380) return false; // Reject any mix/show longer than 6:20
+
+        let dur = 0;
+        if (typeof track.duration === 'string' && track.duration.includes(':')) {
+            const parts = track.duration.split(':').map(Number);
+            if (parts.length === 3) dur = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            else if (parts.length === 2) dur = parts[0] * 60 + parts[1];
+        } else {
+            dur = Number(track.duration) || 0;
+        }
+
+        if (dur > 380) return false; // Strictly reject any mix/show longer than 6:20 (e.g. 68:20)
         if (dur > 0 && dur < 40) return false;
 
         const title = (track.title || '').toLowerCase();
@@ -915,7 +985,8 @@ const App = {
             'carvaan', 'weekend classic', 'radio show', 'podcast', 'episode',
             'live stream', 'livestream', 'superhit songs', 'top 10 songs',
             'top 20 songs', 'top 50 songs', 'top 100 songs', 'evergreen songs',
-            'purane gane', 'full songs jukebox', 'audio songs jukebox', 'continuous mix'
+            'purane gane', 'full songs jukebox', 'audio songs jukebox', 'continuous mix',
+            'geetmala', 'chitrahaar', 'songs collection', 'anthology', 'audio show'
         ];
 
         for (const kw of banned) {
@@ -955,11 +1026,19 @@ const App = {
         }
     },
 
-    async nextTrack() {
+    async nextTrack(forceNext = false) {
+        // Immediately pause current playback for snappy responsiveness
+        if (this.ytPlayer && this.ytPlayer.pauseVideo) {
+            try { this.ytPlayer.pauseVideo(); } catch (e) {}
+        }
+        if (this.audio) {
+            try { this.audio.pause(); } catch (e) {}
+        }
+
         const repeatMode = State.get('repeatMode');
-        if (repeatMode === 'one') {
+        if (!forceNext && repeatMode === 'one') {
             const current = State.get('currentTrack');
-            if (current) {
+            if (current && this.isSingleTrack(current)) {
                 if (current.provider_id === 'youtube' && this.ytPlayer && this.ytPlayer.seekTo) {
                     this.ytPlayer.seekTo(0);
                     this.ytPlayer.playVideo();
@@ -975,22 +1054,15 @@ const App = {
         const queue = State.get('queue') || [];
         const shuffle = State.get('shuffle');
 
-        // 1. Inside a playlist: play through ALL songs in the playlist
+        // 1. Inside a playlist: play next valid single song in playlist
         if (playbackSource === 'playlist' && queue.length > 0) {
-            if (shuffle && queue.length > 1) {
-                let nextIdx = Math.floor(Math.random() * queue.length);
-                if (nextIdx === State.get('queueIndex')) {
-                    nextIdx = (nextIdx + 1) % queue.length;
-                }
+            let nextIdx = State.get('queueIndex') + 1;
+            while (nextIdx < queue.length && !this.isSingleTrack(queue[nextIdx])) {
+                nextIdx++; // Skip non-single compilations
+            }
+            if (nextIdx < queue.length && queue[nextIdx]) {
                 State.set('queueIndex', nextIdx);
                 this.playTrack(queue[nextIdx]);
-                return;
-            }
-
-            let idx = State.get('queueIndex') + 1;
-            if (idx < queue.length && queue[idx]) {
-                State.set('queueIndex', idx);
-                this.playTrack(queue[idx]);
                 return;
             } else if (repeatMode === 'all') {
                 State.set('queueIndex', 0);
@@ -1936,6 +2008,111 @@ const App = {
         if (input) input.value = query;
         if (dropdown) dropdown.classList.remove('active');
         this.navigateTo('search', query);
+    },
+
+    // Jam Real-Time Social Interactions: Reactions & Chat
+    sendJamReaction(emoji) {
+        let activeJam = State.get('activeJamRoom');
+        const savedJamId = localStorage.getItem('musicwave_active_jam_id');
+        if (!activeJam && savedJamId) activeJam = { id: savedJamId };
+        if (!activeJam || !activeJam.id) {
+            UI.showToast('Join a Jam room to send reactions', 'info');
+            return;
+        }
+
+        const user = State.get('user') || {
+            id: Number(localStorage.getItem('musicwave_user_id')),
+            username: localStorage.getItem('musicwave_username') || 'Guest'
+        };
+
+        // Render locally instantly
+        UI.showFloatingReaction(emoji, user);
+
+        // Broadcast to all room listeners via WebSocket
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('jam_reaction', {
+                room_id: activeJam.id,
+                emoji: emoji,
+                user: user
+            });
+        }
+    },
+
+    async sendJamChatMessage(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const input = document.getElementById('jam-chat-input-field');
+        if (!input) return;
+        const text = input.value.trim();
+        if (!text) return;
+
+        let activeJam = State.get('activeJamRoom');
+        const savedJamId = localStorage.getItem('musicwave_active_jam_id');
+        if (!activeJam && savedJamId) activeJam = { id: savedJamId };
+        if (!activeJam || !activeJam.id) {
+            UI.showToast('You must be inside an active Jam room to chat', 'error');
+            return;
+        }
+
+        input.value = '';
+
+        const user = State.get('user') || {
+            id: Number(localStorage.getItem('musicwave_user_id')),
+            username: localStorage.getItem('musicwave_username') || 'Guest',
+            display_name: localStorage.getItem('musicwave_display_name') || localStorage.getItem('musicwave_username') || 'Guest'
+        };
+
+        // Emit over socket for instant real-time broadcast
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('jam_chat_message', {
+                room_id: activeJam.id,
+                user: user,
+                content: text,
+                message_type: 'chat'
+            });
+        } else {
+            // HTTP fallback
+            try {
+                const res = await API.sendJamMessage(activeJam.id, text, 'chat');
+                if (res && res.message) {
+                    UI.appendJamMessage(res.message);
+                }
+            } catch (err) {
+                UI.showToast(err.message || 'Failed to send message', 'error');
+            }
+        }
+    },
+
+    async loadJamMessages(roomId) {
+        if (!roomId) return;
+        try {
+            const res = await API.getJamMessages(roomId);
+            const list = document.getElementById('jam-chat-messages-list');
+            if (list && res.messages && res.messages.length > 0) {
+                list.innerHTML = '';
+                res.messages.forEach(m => UI.appendJamMessage(m));
+            }
+        } catch (err) {
+            console.warn('[Jam Messages Load Error]:', err);
+        }
+    },
+
+    switchJamTab(tab) {
+        const chatPanel = document.getElementById('jam-tab-chat-panel');
+        const listenersPanel = document.getElementById('jam-tab-listeners-panel');
+        const btnChat = document.getElementById('jam-tab-btn-chat');
+        const btnListeners = document.getElementById('jam-tab-btn-listeners');
+
+        if (tab === 'chat') {
+            if (chatPanel) chatPanel.style.display = 'block';
+            if (listenersPanel) listenersPanel.style.display = 'none';
+            if (btnChat) btnChat.classList.add('active');
+            if (btnListeners) btnListeners.classList.remove('active');
+        } else {
+            if (chatPanel) chatPanel.style.display = 'none';
+            if (listenersPanel) listenersPanel.style.display = 'block';
+            if (btnChat) btnChat.classList.remove('active');
+            if (btnListeners) btnListeners.classList.add('active');
+        }
     }
 };
 

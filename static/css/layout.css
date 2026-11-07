@@ -370,14 +370,180 @@
     }
 }
 
+/* ----------------------------------------------------
+   Mobile Navigation & Responsive UI Elements
+---------------------------------------------------- */
+.mobile-menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin-right: 8px;
+    flex-shrink: 0;
+    transition: all var(--transition-fast);
+}
+
+.mobile-menu-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
+}
+
+.mobile-drawer-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1050;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.mobile-drawer-overlay.active {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.mobile-bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: rgba(14, 14, 22, 0.98);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid var(--border-subtle);
+    z-index: 1000;
+    padding: 0 8px;
+    box-sizing: border-box;
+}
+
+.mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 6px 0;
+    transition: all var(--transition-fast);
+    position: relative;
+}
+
+.mobile-nav-item svg {
+    transition: transform var(--transition-fast);
+}
+
+.mobile-nav-item:active svg {
+    transform: scale(0.9);
+}
+
+.mobile-nav-item.active {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+.mobile-nav-item.active svg {
+    stroke: var(--primary);
+}
+
+.mobile-nav-icon-badge-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mobile-nav-pulse-dot {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent-amber);
+    box-shadow: 0 0 8px var(--accent-amber);
+}
+
 @media (max-width: 680px) {
     #app-container {
         grid-template-columns: 1fr;
-        grid-template-areas:
-            "main"
-            "player";
+        grid-template-rows: 1fr;
+        grid-template-areas: "main";
+        height: 100vh;
+        overflow: hidden;
     }
+
+    .mobile-menu-btn {
+        display: flex;
+    }
+
+    .mobile-bottom-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-around;
+    }
+
+    /* Transform Sidebar into smooth Slide-out Drawer */
     .app-sidebar {
-        display: none;
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 280px;
+        max-width: 80vw;
+        background: #11111a;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.7);
+        z-index: 1100;
+        transform: translateX(-100%);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .app-sidebar.mobile-open {
+        transform: translateX(0);
+    }
+
+    .brand-logo span, .sidebar-label, .nav-item span, .badge {
+        display: inline-block;
+    }
+
+    .nav-item a, .nav-item button {
+        justify-content: flex-start;
+        padding: 10px 14px;
+    }
+
+    /* Position persistent bottom player right above the 60px mobile nav */
+    .app-player {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 60px;
+        height: 64px;
+        z-index: 990;
+        padding: 0 12px;
+        box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.5);
+    }
+
+    .main-view-container {
+        padding: 16px 14px 145px 14px;
     }
 }

@@ -720,9 +720,9 @@ const UI = {
             </div>
 
             <!-- Jam Room Workspace -->
-            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
-                <!-- Left: Now Playing in Jam -->
-                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px;">
+            <div id="jam-room-workspace" style="display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 24px; position: relative;">
+                <!-- Left: Now Playing in Jam & Emoji Reactions -->
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px; display: flex; flex-direction: column;">
                     <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 16px;">Now Playing in Jam</h3>
                     ${currentTrack ? `
                         <div style="display: flex; align-items: center; gap: 20px;">
@@ -756,27 +756,126 @@ const UI = {
                             `}
                         </div>
                     `}
+
+                    <!-- Live Emoji Reactions Bar -->
+                    <div style="margin-top: 20px;">
+                        <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px; font-weight: 700;">
+                            Live Party Reactions (Tap to Broadcast)
+                        </div>
+                        <div class="jam-reactions-bar">
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('🔥')" title="Fire">🔥</button>
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('❤️')" title="Love">❤️</button>
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('🎧')" title="Vibe">🎧</button>
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('💃')" title="Dance">💃</button>
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('⚡')" title="Electric">⚡</button>
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('👏')" title="Clap">👏</button>
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('🤯')" title="Mind Blown">🤯</button>
+                            <button class="jam-reaction-btn" onclick="App.sendJamReaction('🎉')" title="Party">🎉</button>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Right: Active Listeners -->
-                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px;">
-                    <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 16px;">Listeners (${participants.length})</h3>
-                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                        ${participants.map(p => `
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div class="user-avatar-sm" style="width: 32px; height: 32px; font-size: 0.8rem;">
-                                    ${p.username ? p.username.charAt(0).toUpperCase() : 'U'}
+                <!-- Right: Jam Tabs (Live Chat & Listeners) -->
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 20px; display: flex; flex-direction: column;">
+                    <div class="jam-tabs-header">
+                        <button id="jam-tab-btn-chat" class="jam-tab-btn active" onclick="App.switchJamTab('chat')">💬 Live Chat</button>
+                        <button id="jam-tab-btn-listeners" class="jam-tab-btn" onclick="App.switchJamTab('listeners')">👥 Listeners (${participants.length})</button>
+                    </div>
+
+                    <!-- Panel 1: Live Chat -->
+                    <div id="jam-tab-chat-panel">
+                        <div class="jam-chat-container">
+                            <div class="jam-chat-messages" id="jam-chat-messages-list">
+                                <div style="color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 20px 0;">
+                                    Welcome to ${room.name}! Chat live with party listeners.
                                 </div>
-                                <span style="font-size: 0.88rem; font-weight: 600;">${p.display_name || p.username}</span>
-                                ${p.is_host ? '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); font-size: 0.65rem; margin-left: auto;">👑 Host</span>' : ''}
                             </div>
-                        `).join('')}
+                            <form class="jam-chat-input-bar" onsubmit="App.sendJamChatMessage(event)">
+                                <input type="text" id="jam-chat-input-field" class="jam-chat-input" placeholder="Say something in Jam party..." autocomplete="off" maxlength="280" />
+                                <button type="submit" class="jam-chat-send-btn">Send</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Panel 2: Listeners List -->
+                    <div id="jam-tab-listeners-panel" style="display: none;">
+                        <div style="display: flex; flex-direction: column; gap: 12px; max-height: 380px; overflow-y: auto;">
+                            ${participants.map(p => `
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div class="user-avatar-sm" style="width: 32px; height: 32px; font-size: 0.8rem;">
+                                        ${p.username ? p.username.charAt(0).toUpperCase() : 'U'}
+                                    </div>
+                                    <span style="font-size: 0.88rem; font-weight: 600;">${p.display_name || p.username}</span>
+                                    ${p.is_host ? '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); font-size: 0.65rem; margin-left: auto;">👑 Host</span>' : ''}
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Floating Emoji Reactions Overlay -->
+            <div id="jam-reactions-overlay" class="jam-reactions-overlay"></div>
         `;
 
         App.startJamCountdown(remSec, isHost, room.id);
+        App.loadJamMessages(room.id);
+    },
+
+    appendJamMessage(msg) {
+        const list = document.getElementById('jam-chat-messages-list');
+        if (!list) return;
+
+        const currentUserId = State.get('user')?.id || Number(localStorage.getItem('musicwave_user_id'));
+        const isOwn = (msg.user_id && currentUserId && Number(msg.user_id) === Number(currentUserId));
+        const authorName = msg.display_name || msg.username || 'Listener';
+        const initial = authorName.charAt(0).toUpperCase();
+
+        const msgRow = document.createElement('div');
+        msgRow.className = `jam-chat-msg-row ${isOwn ? 'is-own' : ''}`;
+        msgRow.innerHTML = `
+            <div class="jam-chat-avatar">${initial}</div>
+            <div class="jam-chat-bubble">
+                <div class="jam-chat-header">
+                    <span class="jam-chat-author">${authorName}</span>
+                    ${msg.is_host ? '<span class="jam-chat-badge-host">👑 Host</span>' : ''}
+                </div>
+                <div>${(msg.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+            </div>
+        `;
+        list.appendChild(msgRow);
+        list.scrollTop = list.scrollHeight;
+    },
+
+    showFloatingReaction(emoji, user) {
+        let overlay = document.getElementById('jam-reactions-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'jam-reactions-overlay';
+            overlay.className = 'jam-reactions-overlay';
+            document.body.appendChild(overlay);
+        }
+
+        const span = document.createElement('span');
+        span.className = 'floating-reaction-emoji';
+        span.textContent = emoji;
+
+        // Spread reactions across the screen with randomized natural drift and rotation
+        const randomX = Math.floor(Math.random() * (window.innerWidth - 80)) + 40;
+        const randomDrift = (Math.random() - 0.5) * 120;
+        const randomRot = Math.floor((Math.random() - 0.5) * 45);
+
+        span.style.left = `${randomX}px`;
+        span.style.setProperty('--drift', `${randomDrift}px`);
+        span.style.setProperty('--rot', `${randomRot}deg`);
+
+        overlay.appendChild(span);
+        setTimeout(() => {
+            if (span && span.parentNode) {
+                span.parentNode.removeChild(span);
+            }
+        }, 3100);
+    },
     },
 
     // Render Friends View

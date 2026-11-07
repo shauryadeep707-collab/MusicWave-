@@ -360,3 +360,68 @@ def end_jam(room_id):
         'message': f'Jam room "{room["name"]}" has been ended by the owner.'
     }), 200
 
+@jams_bp.route('/<room_id>/messages', methods=['GET'], strict_slashes=False)
+def get_jam_messages(room_id):
+    """Retrieve chat history for a Jam room."""
+    messages = query_db("""
+        SELECT m.id, m.room_id, m.user_id, m.message_type, m.content, m.created_at,
+               u.username, p.display_name, p.avatar_url,
+               (r.host_id = m.user_id) as is_host
+        FROM jam_messages m
+        JOIN users u ON m.user_id = u.id
+        LEFT JOIN user_profiles p ON u.id = p.user_id
+        JOIN jam_rooms r ON m.room_id = r.id
+        WHERE m.room_id = ?
+        ORDER BY m.created_at ASC
+        LIMIT 100
+    """, (room_id,))
+    return jsonify({'messages': messages}), 200
+
+@jams_bp.route('/<room_id>/messages', methods=['POST'], strict_slashes=False)
+def post_jam_message(room_id):
+    """Post a new message or reaction to the Jam room."""
+    user_id = get_auth_user_id(auto_create_guest=True)
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json() or {}
+    content = (data.get('content') or '').strip()
+    msg_type = data.get('message_type', 'chat')
+
+    if not content:
+        return jsonify({'error': 'Message cannot be empty'}), 400
+
+    user = query_db("""
+        SELECT u.id, u.username, p.display_name, p.avatar_url,
+               (r.host_id = u.id) as is_host
+        FROM users u
+        LEFT JOIN user_profiles p ON u.id = p.user_id
+        JOIN jam_rooms r ON r.id = ?
+        WHERE u.id = ?
+    """, (room_id, user_id), one=True)
+
+    execute_db("""
+        INSERT INTO jam_messages (room_id, user_id, message_type, content)
+        VALUES (?, ?, ?, ?)
+    """, (room_id, user_id, msg_type, content))
+
+    msg_payload = {
+        'room_id': room_id,
+        'user_id': user_id,
+        'username': user['username'] if user else f"User_{user_id}",
+        'display_name': (user.get('display_name') or user['username']) if user else f"User_{user_id}",
+        'avatar_url': (user.get('avatar_url') if user else None) or '/static/images/default-avatar.png',
+        'is_host': bool(user.get('is_host') if user else False),
+        'message_type': msg_type,
+        'content': content,
+        'created_at': datetime.utcnow().isoformat()
+    }
+
+    try:
+        from backend import socketio
+        socketio.emit('jam_new_message', msg_payload, to=room_id)
+    except Exception as se:
+        print(f"[Socket message broadcast notice]: {se}")
+
+    return jsonify({'status': 'sent', 'message': msg_payload}), 201
+

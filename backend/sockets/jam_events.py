@@ -134,3 +134,60 @@ def register_socket_events(socketio):
             'position': position,
             'status': status
         }, to=room_id, include_self=False)
+
+    @socketio.on('jam_chat_message')
+    def on_chat_message(data):
+        """Broadcast live chat message to all listeners in Jam room and persist."""
+        room_id = data.get('room_id')
+        user = data.get('user') or {}
+        user_id = user.get('id')
+        content = (data.get('content') or '').strip()
+        msg_type = data.get('message_type', 'chat')
+
+        if not room_id or not content:
+            return
+
+        is_host = False
+        try:
+            room = query_db("SELECT host_id FROM jam_rooms WHERE id = ?", (room_id,), one=True)
+            if room and user_id:
+                is_host = (room['host_id'] == user_id)
+        except Exception:
+            pass
+
+        if user_id:
+            try:
+                execute_db("""
+                    INSERT INTO jam_messages (room_id, user_id, message_type, content)
+                    VALUES (?, ?, ?, ?)
+                """, (room_id, user_id, msg_type, content))
+            except Exception as e:
+                print(f"[Jam Chat DB Error]: {e}")
+
+        emit('jam_new_message', {
+            'room_id': room_id,
+            'user_id': user_id,
+            'username': user.get('username') or 'Guest',
+            'display_name': user.get('display_name') or user.get('username') or 'Guest',
+            'avatar_url': user.get('avatar_url') or '/static/images/default-avatar.png',
+            'is_host': is_host,
+            'message_type': msg_type,
+            'content': content,
+            'created_at': datetime.utcnow().isoformat()
+        }, to=room_id)
+
+    @socketio.on('jam_reaction')
+    def on_reaction(data):
+        """Broadcast instant flying emoji reaction to all listeners in the Jam room."""
+        room_id = data.get('room_id')
+        emoji = data.get('emoji')
+        user = data.get('user') or {}
+        if not room_id or not emoji:
+            return
+
+        emit('jam_reaction_broadcast', {
+            'room_id': room_id,
+            'emoji': emoji,
+            'user': user,
+            'timestamp': datetime.utcnow().isoformat()
+        }, to=room_id)

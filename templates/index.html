@@ -129,6 +129,13 @@
             <!-- Top Navigation Bar -->
             <header class="app-topbar">
                 <div class="topbar-left">
+                    <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="App.toggleMobileSidebar()" aria-label="Toggle navigation menu">
+                        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
                     <div class="search-bar-wrapper">
                         <svg class="search-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                         <input type="text" id="global-search-input" class="search-input" placeholder="Search songs, artists, or type any lyrics line (e.g. 'apna bana le piya')..." autocomplete="off">
@@ -228,6 +235,38 @@
                 </div>
             </div>
         </footer>
+
+        <!-- Mobile Drawer Overlay -->
+        <div id="mobile-drawer-overlay" class="mobile-drawer-overlay" onclick="App.closeMobileSidebar()"></div>
+
+        <!-- ==============================================
+             MOBILE BOTTOM NAVIGATION BAR (Screens <= 680px)
+             ============================================== -->
+        <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+            <a href="javascript:void(0)" class="mobile-nav-item active" data-page="home" onclick="App.navigateTo('home')">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <span>Home</span>
+            </a>
+            <a href="javascript:void(0)" class="mobile-nav-item" data-page="search" onclick="App.navigateTo('search')">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span>Search</span>
+            </a>
+            <a href="javascript:void(0)" class="mobile-nav-item" data-page="explore" onclick="App.navigateTo('explore')">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+                <span>Explore</span>
+            </a>
+            <a href="javascript:void(0)" class="mobile-nav-item" data-page="jams" onclick="App.navigateTo('jams')">
+                <div class="mobile-nav-icon-badge-wrap">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span class="mobile-nav-pulse-dot"></span>
+                </div>
+                <span>Jams</span>
+            </a>
+            <a href="javascript:void(0)" class="mobile-nav-item" data-page="library" onclick="App.navigateTo('library')">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <span>Library</span>
+            </a>
+        </nav>
     </div>
 
     <!-- Hidden YouTube Player Container -->
