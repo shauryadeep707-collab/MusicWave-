@@ -12,10 +12,10 @@
 
     <!-- Stylesheets -->
     <link rel="stylesheet" href="/static/css/variables.css?v=2.4">
-    <link rel="stylesheet" href="/static/css/base.css?v=2.7">
-    <link rel="stylesheet" href="/static/css/layout.css?v=2.7">
-    <link rel="stylesheet" href="/static/css/components.css?v=2.7">
-    <link rel="stylesheet" href="/static/css/player.css?v=2.7">
+    <link rel="stylesheet" href="/static/css/base.css?v=2.8">
+    <link rel="stylesheet" href="/static/css/layout.css?v=2.8">
+    <link rel="stylesheet" href="/static/css/components.css?v=2.8">
+    <link rel="stylesheet" href="/static/css/player.css?v=2.8">
 
     <!-- Socket.IO & YouTube IFrame Player API -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -346,25 +346,53 @@
          AUTH MODAL
          ============================================== -->
     <div class="modal-overlay" id="auth-modal-overlay">
-        <div class="modal-dialog">
+        <div class="modal-dialog" style="max-width: 440px;">
             <div class="modal-header">
                 <h3 class="modal-title" id="auth-modal-title">Sign In to MusicWave</h3>
                 <button class="icon-btn" onclick="App.closeAuthModal()">✕</button>
             </div>
-            <form onsubmit="App.handleAuthSubmit(event)">
-                <div id="auth-name-group" style="display: none; margin-bottom: 14px;">
-                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Username</label>
-                    <input type="text" id="auth-username-input" style="width: 100%; padding: 10px 14px;" placeholder="Choose a username">
+            <form id="auth-form" onsubmit="App.handleAuthSubmit(event)">
+                <!-- Inline Error Alert Message -->
+                <div id="auth-error-msg" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5; padding: 10px 14px; border-radius: var(--radius-md); font-size: 0.85rem; margin-bottom: 14px;"></div>
+
+                <!-- Registration-only fields -->
+                <div id="auth-register-group" style="display: none;">
+                    <div style="margin-bottom: 14px;">
+                        <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Choose Username <span style="color:var(--accent-rose);">*</span></label>
+                        <input type="text" id="auth-username-input" class="search-input" style="width: 100%; padding: 10px 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: white;" placeholder="e.g. alex77">
+                    </div>
+                    <div style="margin-bottom: 14px;">
+                        <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Email Address <span style="color:var(--accent-rose);">*</span></label>
+                        <input type="email" id="auth-email-input" class="search-input" style="width: 100%; padding: 10px 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: white;" placeholder="you@example.com">
+                    </div>
+                    <div style="margin-bottom: 14px;">
+                        <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Display Name (Optional)</label>
+                        <input type="text" id="auth-displayname-input" class="search-input" style="width: 100%; padding: 10px 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: white;" placeholder="e.g. Alex Rivera">
+                    </div>
                 </div>
-                <div style="margin-bottom: 14px;">
-                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Email Address</label>
-                    <input type="email" id="auth-email-input" required style="width: 100%; padding: 10px 14px;" placeholder="you@example.com">
+
+                <!-- Login-only Identifier Field (Allows username OR email with type="text") -->
+                <div id="auth-login-group" style="margin-bottom: 14px;">
+                    <label id="auth-identifier-label" style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Username or Email Address</label>
+                    <input type="text" id="auth-identifier-input" class="search-input" style="width: 100%; padding: 10px 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: white;" placeholder="Enter your username or email">
                 </div>
+
+                <!-- Password Field (Common to both) -->
                 <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 6px;">Password</label>
-                    <input type="password" id="auth-password-input" required minlength="6" style="width: 100%; padding: 10px 14px;" placeholder="••••••••">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="font-size: 0.82rem; color: var(--text-secondary);">Password <span style="color:var(--accent-rose);">*</span></label>
+                        <span id="auth-password-hint" style="font-size: 0.74rem; color: var(--text-muted); display: none;">Min. 6 characters</span>
+                    </div>
+                    <div style="position: relative;">
+                        <input type="password" id="auth-password-input" required minlength="6" class="search-input" style="width: 100%; padding: 10px 42px 10px 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: white;" placeholder="••••••••">
+                        <button type="button" onclick="App.togglePasswordVisibility('auth-password-input', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.95rem; padding: 4px;">👁️</button>
+                    </div>
                 </div>
-                <button type="submit" class="btn-primary" id="auth-modal-submit" style="width: 100%; padding: 12px; font-size: 1rem; margin-bottom: 14px;">Sign In</button>
+
+                <button type="submit" class="btn-primary" id="auth-modal-submit" style="width: 100%; padding: 12px; font-size: 1rem; margin-bottom: 14px;">
+                    Sign In
+                </button>
+
                 <div id="auth-modal-switch" style="text-align: center; font-size: 0.85rem; color: var(--text-secondary);">
                     Don't have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('register')" style="color:var(--primary); font-weight:600;">Create One</a>
                 </div>
@@ -376,9 +404,9 @@
     <div id="toast-container"></div>
 
     <!-- Scripts -->
-    <script src="/static/js/api.js?v=2.7"></script>
-    <script src="/static/js/state.js?v=2.7"></script>
-    <script src="/static/js/ui.js?v=2.7"></script>
-    <script src="/static/js/app.js?v=2.7"></script>
+    <script src="/static/js/api.js?v=2.8"></script>
+    <script src="/static/js/state.js?v=2.8"></script>
+    <script src="/static/js/ui.js?v=2.8"></script>
+    <script src="/static/js/app.js?v=2.8"></script>
 </body>
 </html>

@@ -79,14 +79,24 @@ def register():
     password = data.get('password', '')
     display_name = data.get('display_name', '').strip() or username
 
-    if not username or not email or not password:
-        return jsonify({'error': 'Username, email and password are required'}), 400
+    if not username:
+        return jsonify({'error': 'Username is required'}), 400
+    if len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters'}), 400
+    if not email or '@' not in email:
+        return jsonify({'error': 'A valid email address is required'}), 400
+    if not password:
+        return jsonify({'error': 'Password is required'}), 400
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
 
-    existing = query_db("SELECT id FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)", (username, email), one=True)
-    if existing:
-        return jsonify({'error': 'Username or email is already registered'}), 409
+    existing_user = query_db("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,), one=True)
+    if existing_user:
+        return jsonify({'error': f'Username "@{username}" is already taken. Please choose another username.'}), 409
+
+    existing_email = query_db("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (email,), one=True)
+    if existing_email:
+        return jsonify({'error': f'An account with email "{email}" already exists. Please sign in instead.'}), 409
 
     pwd_hash = generate_password_hash(password, method='pbkdf2:sha256')
     try:
@@ -117,7 +127,7 @@ def register():
         }
 
         return jsonify({
-            'message': 'Registration successful',
+            'message': f'Welcome to MusicWave, {display_name}!',
             'user': user_obj,
             'token': f"mw_token_{user_id}"
         }), 201
@@ -127,11 +137,13 @@ def register():
 @auth_bp.route('/login', methods=['POST'], strict_slashes=False)
 def login():
     data = request.get_json() or {}
-    identifier = data.get('identifier', '').strip()
+    identifier = (data.get('identifier') or data.get('email') or data.get('username') or '').strip()
     password = data.get('password', '')
 
-    if not identifier or not password:
-        return jsonify({'error': 'Identifier and password are required'}), 400
+    if not identifier:
+        return jsonify({'error': 'Please enter your username or email address'}), 400
+    if not password:
+        return jsonify({'error': 'Please enter your password'}), 400
 
     user = query_db("""
         SELECT u.id, u.username, u.email, u.password_hash, u.role, u.is_active,
@@ -141,10 +153,14 @@ def login():
         WHERE LOWER(u.username) = LOWER(?) OR LOWER(u.email) = LOWER(?)
     """, (identifier, identifier), one=True)
 
-    if not user or not check_password_hash(user['password_hash'], password):
-        return jsonify({'error': 'Invalid username/email or password'}), 401
+    if not user:
+        return jsonify({'error': f'No account found matching "{identifier}". Please check for typos or click "Create One".'}), 401
+
+    if not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'Incorrect password. Please try again.'}), 401
+
     if not user.get('is_active', True):
-        return jsonify({'error': 'Account has been disabled'}), 403
+        return jsonify({'error': 'This account has been disabled. Please contact support.'}), 403
 
     # Set permanent session for lifetime login
     session.permanent = True
@@ -163,7 +179,7 @@ def login():
     }
 
     return jsonify({
-        'message': 'Login successful',
+        'message': f'Welcome back, {user_obj["display_name"]}!',
         'user': user_obj,
         'token': f"mw_token_{user['id']}"
     }), 200

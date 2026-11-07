@@ -950,23 +950,39 @@ const App = {
         const title = document.getElementById('auth-modal-title');
         const submitBtn = document.getElementById('auth-modal-submit');
         const switchText = document.getElementById('auth-modal-switch');
-        const nameField = document.getElementById('auth-name-group');
+        const registerGroup = document.getElementById('auth-register-group');
+        const loginGroup = document.getElementById('auth-login-group');
+        const passwordHint = document.getElementById('auth-password-hint');
+        const errorMsg = document.getElementById('auth-error-msg');
+        const identInput = document.getElementById('auth-identifier-input');
+        const usernameInput = document.getElementById('auth-username-input');
 
         if (!overlay) return;
+        if (errorMsg) errorMsg.style.display = 'none';
         overlay.classList.add('active');
 
         if (mode === 'login') {
-            title.textContent = 'Sign In to MusicWave';
-            submitBtn.textContent = 'Sign In';
-            nameField.style.display = 'none';
-            switchText.innerHTML = `Don't have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('register')" style="color:var(--primary); font-weight:600;">Create One</a>`;
+            if (title) title.textContent = 'Sign In to MusicWave';
+            if (submitBtn) submitBtn.textContent = 'Sign In';
+            if (registerGroup) registerGroup.style.display = 'none';
+            if (loginGroup) loginGroup.style.display = 'block';
+            if (passwordHint) passwordHint.style.display = 'none';
+            if (switchText) {
+                switchText.innerHTML = `Don't have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('register')" style="color:var(--primary); font-weight:600;">Create One</a>`;
+            }
             overlay.dataset.mode = 'login';
+            if (identInput) setTimeout(() => identInput.focus(), 150);
         } else {
-            title.textContent = 'Create MusicWave Account';
-            submitBtn.textContent = 'Create Account';
-            nameField.style.display = 'block';
-            switchText.innerHTML = `Already have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('login')" style="color:var(--primary); font-weight:600;">Sign In</a>`;
+            if (title) title.textContent = 'Create MusicWave Account';
+            if (submitBtn) submitBtn.textContent = 'Create Free Account';
+            if (registerGroup) registerGroup.style.display = 'block';
+            if (loginGroup) loginGroup.style.display = 'none';
+            if (passwordHint) passwordHint.style.display = 'inline';
+            if (switchText) {
+                switchText.innerHTML = `Already have an account? <a href="javascript:void(0)" onclick="App.openAuthModal('login')" style="color:var(--primary); font-weight:600;">Sign In</a>`;
+            }
             overlay.dataset.mode = 'register';
+            if (usernameInput) setTimeout(() => usernameInput.focus(), 150);
         }
     },
 
@@ -975,29 +991,82 @@ const App = {
         if (overlay) overlay.classList.remove('active');
     },
 
+    togglePasswordVisibility(inputId, btn) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            if (btn) btn.textContent = '🙈';
+        } else {
+            input.type = 'password';
+            if (btn) btn.textContent = '👁️';
+        }
+    },
+
     async handleAuthSubmit(e) {
         e.preventDefault();
         const overlay = document.getElementById('auth-modal-overlay');
         const mode = overlay.dataset.mode;
-        const email = document.getElementById('auth-email-input').value.trim();
-        const pwd = document.getElementById('auth-password-input').value;
-        const username = document.getElementById('auth-username-input').value.trim();
+        const errEl = document.getElementById('auth-error-msg');
+        const submitBtn = document.getElementById('auth-modal-submit');
+        const pwdInput = document.getElementById('auth-password-input');
+        const pwd = pwdInput ? pwdInput.value : '';
+
+        if (errEl) errEl.style.display = 'none';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = mode === 'login' ? 'Signing In...' : 'Creating Account...';
+        }
 
         try {
             let res;
             if (mode === 'login') {
-                res = await API.login(email, pwd);
+                const identInput = document.getElementById('auth-identifier-input');
+                const identifier = identInput ? identInput.value.trim() : '';
+                if (!identifier) throw new Error('Please enter your username or email address.');
+                if (!pwd) throw new Error('Please enter your password.');
+                res = await API.login(identifier, pwd);
             } else {
-                res = await API.register(username, email, pwd, username);
+                const usernameInput = document.getElementById('auth-username-input');
+                const emailInput = document.getElementById('auth-email-input');
+                const displayNameInput = document.getElementById('auth-displayname-input');
+
+                const username = usernameInput ? usernameInput.value.trim() : '';
+                const email = emailInput ? emailInput.value.trim() : '';
+                const displayName = displayNameInput ? displayNameInput.value.trim() : '';
+
+                if (!username || username.length < 3) {
+                    throw new Error('Username must be at least 3 characters long.');
+                }
+                if (!email || !email.includes('@')) {
+                    throw new Error('Please enter a valid email address.');
+                }
+                if (!pwd || pwd.length < 6) {
+                    throw new Error('Password must be at least 6 characters long.');
+                }
+
+                res = await API.register(username, email, pwd, displayName || username);
             }
+
             State.set('user', res.user);
             localStorage.setItem('musicwave_auth_user', JSON.stringify(res.user));
             localStorage.setItem('musicwave_user_id', res.user.id);
             this.updateUserUI(res.user);
             this.closeAuthModal();
-            UI.showToast(`Welcome ${res.user.display_name || res.user.username}!`, 'success');
+            UI.showToast(res.message || `Welcome, ${res.user.display_name || res.user.username}!`, 'success');
         } catch (err) {
-            UI.showToast(err.message, 'error');
+            const msg = err.message || 'Authentication failed. Please try again.';
+            if (errEl) {
+                errEl.textContent = msg;
+                errEl.style.display = 'block';
+            } else {
+                UI.showToast(msg, 'error');
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = mode === 'login' ? 'Sign In' : 'Create Free Account';
+            }
         }
     },
 
