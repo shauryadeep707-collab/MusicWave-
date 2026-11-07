@@ -98,7 +98,7 @@ def register():
     if existing_email:
         return jsonify({'error': f'An account with email "{email}" already exists. Please sign in instead.'}), 409
 
-    pwd_hash = generate_password_hash(password, method='pbkdf2:sha256')
+    pwd_hash = generate_password_hash(password, method='pbkdf2:sha256:50000')
     try:
         user_id, _ = execute_db(
             "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",

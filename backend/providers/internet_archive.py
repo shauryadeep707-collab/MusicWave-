@@ -20,13 +20,13 @@ class InternetArchiveProvider(BaseMusicProvider):
             'q': f'mediatype:audio AND (collection:audio_music OR collection:freemusicarchive OR {query})',
             'fl[]': ['identifier', 'title', 'creator', 'year', 'description', 'format'],
             'sort[]': sort,
-            'rows': limit,
+            'rows': min(limit, 3),
             'page': 1,
             'output': 'json'
         }
         
         try:
-            resp = requests.get(self.BASE_SEARCH_URL, params=params, timeout=7)
+            resp = requests.get(self.BASE_SEARCH_URL, params=params, timeout=2.5)
             if resp.status_code != 200:
                 return []
             docs = resp.json().get('response', {}).get('docs', [])
@@ -51,7 +51,7 @@ class InternetArchiveProvider(BaseMusicProvider):
     def _resolve_track_files(self, ident: str, doc: dict) -> Optional[UnifiedTrack]:
         """Fetch metadata for files in archive item and find the primary MP3 audio."""
         try:
-            meta_resp = requests.get(f"{self.METADATA_URL}/{ident}/files", timeout=5)
+            meta_resp = requests.get(f"{self.METADATA_URL}/{ident}/files", timeout=2)
             if meta_resp.status_code != 200:
                 return None
             files = meta_resp.json().get('result', [])

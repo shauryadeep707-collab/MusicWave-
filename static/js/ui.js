@@ -104,74 +104,80 @@ const UI = {
     },
 
     async loadHomeData() {
-        // Load Genres
-        try {
-            const data = await API.getGenres();
-            const grid = document.getElementById('home-genres-grid');
-            if (grid && data.genres) {
-                grid.innerHTML = data.genres.slice(0, 6).map(g => `
-                    <div class="genre-card" style="background: linear-gradient(135deg, ${g.color_accent} 0%, rgba(18, 18, 28, 0.9) 100%);" onclick="App.browseGenre('${g.name}')">
-                        <span>${g.name}</span>
-                        ${g.image_url ? `<img src="${g.image_url}" class="genre-card-img" alt="${g.name}" loading="lazy"/>` : ''}
-                    </div>
-                `).join('');
-            }
-        } catch (e) {
-            console.error('Failed to load genres:', e);
-        }
-
-        // Load Trending Tracks
-        try {
-            const data = await API.getTrending();
-            const grid = document.getElementById('home-trending-grid');
-            if (grid) {
-                if (data.tracks && data.tracks.length > 0) {
-                    grid.innerHTML = data.tracks.slice(0, 8).map(t => this.createMusicCardHTML(t)).join('');
-                } else {
-                    grid.innerHTML = `
-                        <div style="grid-column: 1/-1; padding: 30px; text-align: center; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px dashed var(--border-subtle);">
-                            <p style="color: var(--text-secondary); margin-bottom: 10px;">Free music providers are ready to stream.</p>
-                            <button class="btn-secondary" onclick="App.navigateTo('explore')">Discover Open Catalog</button>
-                        </div>
-                    `;
-                }
-            }
-        } catch (e) {
-            console.error('Failed to load trending tracks:', e);
-        }
-
-        // Load Jams
-        try {
-            const data = await API.getJams();
-            const grid = document.getElementById('home-jams-grid');
-            if (grid) {
-                if (data.jams && data.jams.length > 0) {
-                    grid.innerHTML = data.jams.map(j => `
-                        <div class="music-card" onclick="App.joinJam('${j.id}')">
-                            <div class="music-card-cover-wrapper">
-                                <img src="${j.cover_url || '/static/images/default-jam.png'}" class="music-card-cover" alt="${j.name}"/>
-                                <div class="music-card-play-overlay">
-                                    <div class="play-circle-btn">
-                                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="music-card-title truncate">${j.name}</div>
-                            <div class="music-card-subtitle truncate">Hosted by ${j.host_name} • ${j.participant_count} listening</div>
+        // Parallel non-blocking data fetching for ultra-responsive initial render
+        const fetchGenres = async () => {
+            try {
+                const data = await API.getGenres();
+                const grid = document.getElementById('home-genres-grid');
+                if (grid && data.genres) {
+                    grid.innerHTML = data.genres.slice(0, 6).map(g => `
+                        <div class="genre-card" style="background: linear-gradient(135deg, ${g.color_accent} 0%, rgba(18, 18, 28, 0.9) 100%);" onclick="App.browseGenre('${g.name}')">
+                            <span>${g.name}</span>
+                            ${g.image_url ? `<img src="${g.image_url}" class="genre-card-img" alt="${g.name}" loading="lazy"/>` : ''}
                         </div>
                     `).join('');
-                } else {
-                    grid.innerHTML = `
-                        <div style="grid-column: 1/-1; padding: 24px; text-align: center; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px dashed var(--border-subtle);">
-                            <p style="color: var(--text-secondary); margin-bottom: 12px;">No active public jams at the moment.</p>
-                            <button class="btn-primary" onclick="App.openCreateJamModal()">Start the First Jam</button>
-                        </div>
-                    `;
                 }
+            } catch (e) {
+                console.error('Failed to load genres:', e);
             }
-        } catch (e) {
-            console.error('Failed to load jams:', e);
-        }
+        };
+
+        const fetchTrending = async () => {
+            try {
+                const data = await API.getTrending();
+                const grid = document.getElementById('home-trending-grid');
+                if (grid) {
+                    if (data.tracks && data.tracks.length > 0) {
+                        grid.innerHTML = data.tracks.slice(0, 8).map(t => this.createMusicCardHTML(t)).join('');
+                    } else {
+                        grid.innerHTML = `
+                            <div style="grid-column: 1/-1; padding: 30px; text-align: center; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px dashed var(--border-subtle);">
+                                <p style="color: var(--text-secondary); margin-bottom: 10px;">Free music providers are ready to stream.</p>
+                                <button class="btn-secondary" onclick="App.navigateTo('explore')">Discover Open Catalog</button>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load trending tracks:', e);
+            }
+        };
+
+        const fetchJams = async () => {
+            try {
+                const data = await API.getJams();
+                const grid = document.getElementById('home-jams-grid');
+                if (grid) {
+                    if (data.jams && data.jams.length > 0) {
+                        grid.innerHTML = data.jams.map(j => `
+                            <div class="music-card" onclick="App.joinJam('${j.id}')">
+                                <div class="music-card-cover-wrapper">
+                                    <img src="${j.cover_url || '/static/images/default-jam.png'}" class="music-card-cover" alt="${j.name}"/>
+                                    <div class="music-card-play-overlay">
+                                        <div class="play-circle-btn">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="music-card-title truncate">${j.name}</div>
+                                <div class="music-card-subtitle truncate">Hosted by ${j.host_name} • ${j.participant_count} listening</div>
+                            </div>
+                        `).join('');
+                    } else {
+                        grid.innerHTML = `
+                            <div style="grid-column: 1/-1; padding: 24px; text-align: center; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px dashed var(--border-subtle);">
+                                <p style="color: var(--text-secondary); margin-bottom: 12px;">No active public jams at the moment.</p>
+                                <button class="btn-primary" onclick="App.openCreateJamModal()">Start the First Jam</button>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load jams:', e);
+            }
+        };
+
+        await Promise.allSettled([fetchGenres(), fetchTrending(), fetchJams()]);
     },
 
     createMusicCardHTML(track) {

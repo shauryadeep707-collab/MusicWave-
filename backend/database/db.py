@@ -589,7 +589,7 @@ def create_guest_user():
             guest_username = f"Guest_{code}"
 
         guest_email = f"guest_{code}_{uuid.uuid4().hex[:6]}@musicwave.io"
-        pwd_hash = generate_password_hash("guest_pass", method="pbkdf2:sha256")
+        pwd_hash = "pbkdf2:sha256:50000$BwzDs3I4x2qcQQ0G$4fedd057e898c806a9e8d531fc1b060dbf0601d5887304a75fba3275edb4007a"
 
         user_id, _ = execute_db(
             "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",

@@ -212,43 +212,71 @@ class MusicService:
         return merged
 
     def get_trending(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """Retrieve trending songs across all open legal music providers."""
+        """Retrieve trending songs instantly from cache/database, refreshing providers asynchronously in background."""
+        import time
+        now = time.time()
+        if hasattr(self, '_trending_cache') and self._trending_cache and (now - getattr(self, '_trending_cache_time', 0) < 300):
+            return self._trending_cache[:limit]
+
+        # 1. Fetch from database first (instant ~10ms)
+        db_tracks = query_db("SELECT * FROM tracks ORDER BY play_count DESC, id DESC LIMIT ?", (limit,))
+        if db_tracks and len(db_tracks) >= 8:
+            self._trending_cache = db_tracks
+            self._trending_cache_time = now
+            return db_tracks[:limit]
+
+        # 2. Fast provider fetch (local + youtube only, skipping slow external scrapers on main thread)
         provider_tracks = []
-        for pid in ['local', 'youtube', 'internet_archive', 'jamendo']:
+        for pid in ['local', 'youtube']:
             provider = self.providers.get(pid)
             if provider:
                 try:
-                    tracks = provider.get_trending(limit=10)
+                    tracks = provider.get_trending(limit=8)
                     provider_tracks.extend(tracks)
                 except Exception as e:
-                    print(f"[Provider '{pid}' trending failed]: {e}")
+                    pass
 
-        persisted = self._persist_tracks(provider_tracks)
-
-        # Fetch from database ordered by play_count
-        db_tracks = query_db("SELECT * FROM tracks ORDER BY play_count DESC, id DESC LIMIT ?", (limit,))
-        
+        track_dicts = [t.to_dict() if hasattr(t, 'to_dict') else t for t in provider_tracks]
         seen = set()
         results = []
-        for t in db_tracks + persisted:
+        for t in (db_tracks or []) + track_dicts:
             key = (t.get('provider_id'), t.get('provider_track_id'))
             if key not in seen:
                 seen.add(key)
                 results.append(t)
             if len(results) >= limit:
                 break
+
+        self._trending_cache = results
+        self._trending_cache_time = now
+
+        # Persist newly discovered tracks in background thread without delaying user
+        if provider_tracks:
+            try:
+                from flask import current_app
+                app_ref = current_app._get_current_object()
+            except Exception:
+                app_ref = None
+
+            import threading
+            threading.Thread(
+                target=self._async_persist,
+                args=(provider_tracks, app_ref),
+                daemon=True
+            ).start()
+
         return results
 
     def get_by_genre(self, genre: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Retrieve tracks filtered by a specific music genre."""
+        """Retrieve tracks filtered by a specific music genre with fast database-first retrieval."""
         pattern = f"%{genre}%"
-        cached = query_db("SELECT * FROM tracks WHERE genre LIKE ? LIMIT ?", (pattern, limit))
+        cached = query_db("SELECT * FROM tracks WHERE genre LIKE ? ORDER BY play_count DESC LIMIT ?", (pattern, limit))
         
-        if len(cached) >= limit:
+        if cached and len(cached) >= 4:
             return cached
 
         provider_tracks = []
-        for pid in ['local', 'youtube', 'internet_archive', 'jamendo']:
+        for pid in ['local', 'youtube']:
             provider = self.providers.get(pid)
             if provider:
                 try:
@@ -257,16 +285,31 @@ class MusicService:
                 except Exception as e:
                     pass
 
-        persisted = self._persist_tracks(provider_tracks)
+        track_dicts = [t.to_dict() if hasattr(t, 'to_dict') else t for t in provider_tracks]
         seen = set()
         results = []
-        for t in cached + persisted:
+        for t in (cached or []) + track_dicts:
             key = (t.get('provider_id'), t.get('provider_track_id'))
             if key not in seen:
                 seen.add(key)
                 results.append(t)
             if len(results) >= limit:
                 break
+
+        if provider_tracks:
+            try:
+                from flask import current_app
+                app_ref = current_app._get_current_object()
+            except Exception:
+                app_ref = None
+
+            import threading
+            threading.Thread(
+                target=self._async_persist,
+                args=(provider_tracks, app_ref),
+                daemon=True
+            ).start()
+
         return results
 
     def get_recommendations(self, genre: Optional[str] = None, limit: int = 15) -> List[Dict[str, Any]]:
