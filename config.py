@@ -44,6 +44,9 @@ class Config:
     SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
     
+    # YouTube Data API v3 (Optional for 100ms ultra-fast search)
+    YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "").strip()
+
     LASTFM_API_KEY = os.getenv("LASTFM_API_KEY", "").strip()
 
     @classmethod

@@ -20,6 +20,9 @@ class YouTubeProvider(BaseMusicProvider):
 
     def __init__(self):
         super().__init__("youtube", "YouTube Music")
+        import os
+        from config import Config
+        self.api_key = getattr(Config, 'YOUTUBE_API_KEY', '') or os.getenv('YOUTUBE_API_KEY', '')
 
     @classmethod
     def extract_id(cls, text: str) -> Optional[str]:
@@ -103,6 +106,66 @@ class YouTubeProvider(BaseMusicProvider):
             search_query = query
         else:
             search_query = f"{query} song"
+
+        # 1. High-Speed Official YouTube Data API v3 (if API key is connected)
+        if self.api_key:
+            try:
+                api_resp = requests.get(
+                    "https://www.googleapis.com/youtube/v3/search",
+                    params={
+                        'part': 'snippet',
+                        'q': search_query,
+                        'type': 'video',
+                        'maxResults': min(limit, 15),
+                        'key': self.api_key
+                    },
+                    timeout=3.5
+                )
+                if api_resp.status_code == 200:
+                    api_data = api_resp.json()
+                    api_tracks = []
+                    for item in api_data.get('items', []):
+                        vid = item.get('id', {}).get('videoId')
+                        snippet = item.get('snippet', {})
+                        if not vid:
+                            continue
+                        raw_title = snippet.get('title', 'Unknown Track')
+                        author = snippet.get('channelTitle', 'YouTube Artist')
+                        thumbnail = snippet.get('thumbnails', {}).get('high', {}).get('url') or f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                        
+                        clean_title = raw_title
+                        artist_name = author
+                        if " - " in raw_title:
+                            parts = raw_title.split(" - ", 1)
+                            artist_name = parts[0].strip()
+                            clean_title = parts[1].strip()
+
+                        clean_title = re.sub(r'\(Official\s*(Video|Audio|Music Video|Lyric Video|HD|4K|Visualizer).*?\)', '', clean_title, flags=re.IGNORECASE).strip()
+                        clean_title = re.sub(r'\[Official\s*(Video|Audio|Music Video|Lyric Video|HD|4K|Visualizer).*?\]', '', clean_title, flags=re.IGNORECASE).strip()
+
+                        api_tracks.append(UnifiedTrack(
+                            provider_id=self.provider_id,
+                            provider_track_id=vid,
+                            title=clean_title or raw_title,
+                            artist_name=artist_name,
+                            album_name="YouTube Music",
+                            genre="YouTube Music",
+                            duration=210,
+                            artwork_url=thumbnail,
+                            stream_url=vid,
+                            download_url=None,
+                            download_allowed=False,
+                            streaming_allowed=True,
+                            licence_information="Standard YouTube License",
+                            licence_url=f"https://www.youtube.com/watch?v={vid}",
+                            source_name="YouTube Official API"
+                        ))
+                    if api_tracks:
+                        return api_tracks
+            except Exception as e:
+                print(f"[YouTube Official API search fallback]: {e}")
+
+        # 2. Parallel Zero-Key Scraper Fallback
         encoded = requests.utils.quote(search_query)
         headers = {
             'User-Agent': self.USER_AGENT,

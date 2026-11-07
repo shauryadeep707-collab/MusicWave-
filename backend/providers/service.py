@@ -79,6 +79,13 @@ class MusicService:
 
         return persisted
 
+    def _async_persist(self, tracks: List[UnifiedTrack]):
+        """Persist tracks in background without blocking API response."""
+        try:
+            self._persist_tracks(tracks)
+        except Exception as e:
+            print(f"[Async Persistence Background Notice]: {e}")
+
     def import_youtube(self, url_or_id: str) -> Optional[Dict[str, Any]]:
         """Directly import any YouTube song by link or ID."""
         yt_provider: YouTubeProvider = self.providers.get('youtube')
@@ -91,7 +98,7 @@ class MusicService:
         return persisted_list[0] if persisted_list else track.to_dict()
 
     def search(self, query: str, limit: int = 25) -> List[Dict[str, Any]]:
-        """Search across local cache, YouTube links, and live external providers."""
+        """Search across local cache, YouTube links, and live external providers in parallel."""
         query = query.strip()
         if not query:
             return []
@@ -103,7 +110,7 @@ class MusicService:
             if yt_track:
                 return [yt_track]
 
-        # 1. Search existing local database cache first
+        # 1. Search existing local database cache first (instant)
         pattern = f"%{query}%"
         cached_results = query_db("""
             SELECT * FROM tracks
@@ -112,30 +119,62 @@ class MusicService:
             LIMIT ?
         """, (pattern, pattern, pattern, pattern, limit))
 
-        # 2. Query active providers in parallel/sequence
+        # 2. Query active providers concurrently with ThreadPoolExecutor
         provider_tracks = []
-        for pid in ['local', 'youtube', 'internet_archive', 'jamendo']:
-            provider = self.providers.get(pid)
-            if provider:
-                try:
-                    tracks = provider.search(query, limit=10)
-                    provider_tracks.extend(tracks)
-                except Exception as e:
-                    print(f"[Provider '{pid}' search failed]: {e}")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
 
-        # Persist newly discovered tracks
-        newly_persisted = self._persist_tracks(provider_tracks)
+        def fetch_provider(pid):
+            p = self.providers.get(pid)
+            if not p:
+                return []
+            try:
+                return p.search(query, limit=12)
+            except Exception as e:
+                return []
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(fetch_provider, pid): pid
+                for pid in ['youtube', 'local', 'jamendo']
+            }
+            try:
+                for fut in as_completed(futures, timeout=3.5):
+                    try:
+                        res = fut.result()
+                        if res:
+                            provider_tracks.extend(res)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # Convert UnifiedTrack objects to dicts instantly
+        track_dicts = []
+        for t in provider_tracks:
+            if hasattr(t, 'to_dict'):
+                track_dicts.append(t.to_dict())
+            elif isinstance(t, dict):
+                track_dicts.append(t)
 
         # Merge and deduplicate by (provider_id, provider_track_id)
         seen = set()
         merged = []
-        for t in cached_results + newly_persisted:
+        for t in cached_results + track_dicts:
             key = (t.get('provider_id'), t.get('provider_track_id'))
             if key not in seen:
                 seen.add(key)
                 merged.append(t)
             if len(merged) >= limit:
                 break
+
+        # Persist newly discovered tracks in background thread without delaying user
+        if provider_tracks:
+            threading.Thread(
+                target=self._async_persist,
+                args=(provider_tracks,),
+                daemon=True
+            ).start()
 
         return merged
 
