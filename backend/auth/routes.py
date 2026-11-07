@@ -4,7 +4,7 @@ from backend.database.db import query_db, execute_db
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
-@auth_bp.route('/me', methods=['GET'])
+@auth_bp.route('/me', methods=['GET'], strict_slashes=False)
 def get_current_user():
     user_id = session.get('user_id')
     # Optional header fallback for strict cookie policies
@@ -30,9 +30,20 @@ def get_current_user():
         session.clear()
         return jsonify({'authenticated': False, 'user': None}), 200
         
-    return jsonify({'authenticated': True, 'user': user}), 200
+    return jsonify({
+        'authenticated': True,
+        'user': {
+            'id': user['id'],
+            'username': user['username'],
+            'email': user['email'],
+            'role': user['role'],
+            'display_name': user.get('display_name') or user['username'],
+            'avatar_url': user.get('avatar_url') or '/static/images/default-avatar.png',
+            'is_guest': user['username'].startswith('Guest_')
+        }
+    }), 200
 
-@auth_bp.route('/guest', methods=['POST'])
+@auth_bp.route('/guest', methods=['POST'], strict_slashes=False)
 def create_guest():
     """Create a persistent guest user identity so visitors can use all features seamlessly."""
     from backend.database.db import create_guest_user
@@ -48,11 +59,19 @@ def create_guest():
     """, (user_id,), one=True)
     return jsonify({
         'authenticated': True,
-        'user': user,
+        'user': {
+            'id': user['id'],
+            'username': user['username'],
+            'email': user['email'],
+            'role': user['role'],
+            'display_name': user.get('display_name') or user['username'],
+            'avatar_url': user.get('avatar_url') or '/static/images/default-avatar.png',
+            'is_guest': True
+        },
         'token': f"mw_token_{user_id}"
     }), 201
 
-@auth_bp.route('/register', methods=['POST'])
+@auth_bp.route('/register', methods=['POST'], strict_slashes=False)
 def register():
     data = request.get_json() or {}
     username = data.get('username', '').strip()
@@ -65,18 +84,18 @@ def register():
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
 
-    existing = query_db("SELECT id FROM users WHERE username = ? OR email = ?", (username, email), one=True)
+    existing = query_db("SELECT id FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)", (username, email), one=True)
     if existing:
         return jsonify({'error': 'Username or email is already registered'}), 409
 
     pwd_hash = generate_password_hash(password, method='pbkdf2:sha256')
     try:
         user_id, _ = execute_db(
-            "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+            "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
             (username, email, pwd_hash)
         )
         execute_db(
-            "INSERT INTO user_profiles (user_id, display_name) VALUES (?, ?)",
+            "INSERT INTO user_profiles (user_id, display_name, avatar_url) VALUES (?, ?, '/static/images/default-avatar.png')",
             (user_id, display_name)
         )
         execute_db("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
@@ -93,7 +112,8 @@ def register():
             'email': email,
             'role': 'user',
             'display_name': display_name,
-            'avatar_url': '/static/images/default-avatar.png'
+            'avatar_url': '/static/images/default-avatar.png',
+            'is_guest': False
         }
 
         return jsonify({
@@ -104,7 +124,7 @@ def register():
     except Exception as e:
         return jsonify({'error': f'Failed to create account: {str(e)}'}), 500
 
-@auth_bp.route('/login', methods=['POST'])
+@auth_bp.route('/login', methods=['POST'], strict_slashes=False)
 def login():
     data = request.get_json() or {}
     identifier = data.get('identifier', '').strip()
@@ -118,12 +138,12 @@ def login():
                p.display_name, p.avatar_url
         FROM users u
         LEFT JOIN user_profiles p ON u.id = p.user_id
-        WHERE u.username = ? OR u.email = ?
-    """, (identifier, identifier.lower()), one=True)
+        WHERE LOWER(u.username) = LOWER(?) OR LOWER(u.email) = LOWER(?)
+    """, (identifier, identifier), one=True)
 
     if not user or not check_password_hash(user['password_hash'], password):
-        return jsonify({'error': 'Invalid credentials'}), 401
-    if not user['is_active']:
+        return jsonify({'error': 'Invalid username/email or password'}), 401
+    if not user.get('is_active', True):
         return jsonify({'error': 'Account has been disabled'}), 403
 
     # Set permanent session for lifetime login
@@ -137,8 +157,9 @@ def login():
         'username': user['username'],
         'email': user['email'],
         'role': user['role'],
-        'display_name': user['display_name'] or user['username'],
-        'avatar_url': user['avatar_url'] or '/static/images/default-avatar.png'
+        'display_name': user.get('display_name') or user['username'],
+        'avatar_url': user.get('avatar_url') or '/static/images/default-avatar.png',
+        'is_guest': user['username'].startswith('Guest_')
     }
 
     return jsonify({
@@ -147,7 +168,7 @@ def login():
         'token': f"mw_token_{user['id']}"
     }), 200
 
-@auth_bp.route('/logout', methods=['POST'])
+@auth_bp.route('/logout', methods=['POST'], strict_slashes=False)
 def logout():
     session.clear()
     return jsonify({'message': 'Logged out successfully'}), 200

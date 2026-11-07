@@ -832,24 +832,40 @@ const UI = {
             return;
         }
 
+        const isGuest = user.username && user.username.startsWith('Guest_');
+
         container.innerHTML = `
             <div class="section-header">
-                <h1 class="section-title">User Profile</h1>
+                <h1 class="section-title">${isGuest ? 'Guest Session' : 'User Profile'}</h1>
             </div>
             <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 28px; max-width: 600px;">
                 <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 24px;">
                     <img src="${user.avatar_url || '/static/images/default-avatar.png'}" style="width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--primary);" />
                     <div>
                         <h2 style="font-size: 1.3rem;">${user.display_name || user.username}</h2>
-                        <p style="color: var(--text-muted);">@${user.username} • Role: ${user.role}</p>
-                        <p style="font-size: 0.85rem; color: var(--text-secondary);">${user.email}</p>
-                        <p style="font-size: 0.8rem; color: var(--accent-emerald); margin-top: 4px;">🔒 Permanent Login Active on this Laptop</p>
+                        <p style="color: var(--text-muted);">@${user.username} • ${isGuest ? '⚡ Temporary Guest' : 'Member'}</p>
+                        ${isGuest ? '' : `<p style="font-size: 0.85rem; color: var(--text-secondary);">${user.email}</p>`}
+                        <p style="font-size: 0.8rem; color: var(--accent-emerald); margin-top: 4px;">
+                            ${isGuest ? '⚡ Guest identity active — You can host Jams, join listening rooms, and play songs immediately.' : '🔒 Permanent Login Active on this Device'}
+                        </p>
                     </div>
                 </div>
-                <div style="display: flex; gap: 12px;">
-                    <button class="btn-secondary" onclick="App.navigateTo('settings')">Settings</button>
-                    <button class="btn-secondary" style="color: var(--accent-rose); border-color: rgba(244, 63, 94, 0.3);" onclick="App.logout()">Sign Out</button>
-                </div>
+
+                ${isGuest ? `
+                    <div style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px;">
+                        <div style="font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">Save your Playlists & Favorites</div>
+                        <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 12px;">Create an account or sign in to save your personal playlists, liked songs, and custom settings across all devices.</p>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button class="btn-primary" style="padding: 7px 18px; font-size: 0.85rem;" onclick="App.openAuthModal('register')">Create Free Account</button>
+                            <button class="btn-secondary" style="padding: 7px 18px; font-size: 0.85rem;" onclick="App.openAuthModal('login')">Sign In</button>
+                        </div>
+                    </div>
+                ` : `
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn-secondary" onclick="App.navigateTo('settings')">Settings</button>
+                        <button class="btn-secondary" style="color: var(--accent-rose); border-color: rgba(244, 63, 94, 0.3);" onclick="App.logout()">Sign Out</button>
+                    </div>
+                `}
             </div>
         `;
     },

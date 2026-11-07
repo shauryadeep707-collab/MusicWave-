@@ -15,12 +15,16 @@ def parse_expiry(exp_val) -> Optional[datetime]:
     if not exp_val:
         return None
     if isinstance(exp_val, datetime):
-        return exp_val
+        return exp_val.replace(tzinfo=None) if exp_val.tzinfo else exp_val
     if isinstance(exp_val, str):
         try:
-            return datetime.fromisoformat(exp_val.replace('Z', ''))
+            dt = datetime.fromisoformat(exp_val.replace('Z', ''))
+            return dt.replace(tzinfo=None) if dt.tzinfo else dt
         except Exception:
-            return datetime.strptime(exp_val[:19], '%Y-%m-%d %H:%M:%S')
+            try:
+                return datetime.strptime(exp_val[:19], '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                return None
     return None
 
 @jams_bp.route('', methods=['GET'], strict_slashes=False)

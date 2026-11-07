@@ -458,7 +458,6 @@ const App = {
 
     async checkAuth() {
         try {
-            // Restore immediately from localStorage for permanent session continuity
             const cachedUser = localStorage.getItem('musicwave_auth_user');
             if (cachedUser) {
                 try {
@@ -469,34 +468,51 @@ const App = {
             }
 
             const res = await API.getMe();
-            if (res.authenticated && res.user) {
+            if (res && res.authenticated && res.user) {
                 State.set('user', res.user);
                 this.updateUserUI(res.user);
                 localStorage.setItem('musicwave_auth_user', JSON.stringify(res.user));
                 localStorage.setItem('musicwave_user_id', res.user.id);
-            } else if (!cachedUser) {
-                // Auto-provision seamless guest identity so visitor can immediately host jams and save favorites
+            } else {
+                // If not authenticated or cached user is obsolete, provision fresh clean guest session
+                localStorage.removeItem('musicwave_auth_user');
+                localStorage.removeItem('musicwave_user_id');
                 const guestUser = await API.createGuestSession();
                 if (guestUser) {
                     State.set('user', guestUser);
                     this.updateUserUI(guestUser);
+                } else {
+                    State.set('user', null);
+                    this.updateUserUI(null);
                 }
             }
         } catch (e) {
-            console.warn('Auth check skipped (offline or unauthenticated)');
+            console.warn('Auth check skipped (offline or unauthenticated):', e);
         }
     },
 
     updateUserUI(user) {
         const userBtn = document.getElementById('user-profile-btn');
         if (!userBtn) return;
-        if (user) {
+
+        if (user && user.username && !user.username.startsWith('Guest_')) {
+            // Full registered user
+            const letter = (user.display_name || user.username || 'U').charAt(0).toUpperCase();
             userBtn.innerHTML = `
-                <div class="user-avatar-sm">${user.username.charAt(0).toUpperCase()}</div>
+                <div class="user-avatar-sm">${letter}</div>
                 <span style="font-weight: 600; font-size: 0.85rem;">${user.display_name || user.username}</span>
             `;
             userBtn.onclick = () => this.navigateTo('profile');
+        } else if (user && user.username && user.username.startsWith('Guest_')) {
+            // Active guest session
+            userBtn.innerHTML = `
+                <div class="user-avatar-sm" style="background: rgba(139, 92, 246, 0.25); color: var(--primary);">👤</div>
+                <span style="font-weight: 600; font-size: 0.82rem; color: var(--text-secondary);">${user.username}</span>
+                <button class="btn-primary" style="padding: 3px 10px; font-size: 0.74rem; margin-left: 4px;" onclick="event.stopPropagation(); App.openAuthModal('login')">Sign In</button>
+            `;
+            userBtn.onclick = () => this.navigateTo('profile');
         } else {
+            // Unauthenticated
             userBtn.innerHTML = `<span style="font-weight: 600; font-size: 0.85rem; padding: 4px 8px;">Sign In</span>`;
             userBtn.onclick = () => this.openAuthModal('login');
         }
@@ -986,13 +1002,21 @@ const App = {
     },
 
     async logout() {
-        await API.logout();
+        try {
+            await API.logout();
+        } catch (e) {}
         localStorage.removeItem('musicwave_auth_user');
         localStorage.removeItem('musicwave_user_id');
         State.set('user', null);
         this.updateUserUI(null);
-        this.navigateTo('home');
         UI.showToast('You have been logged out.', 'info');
+        // Provision a fresh guest identity for instant features without page refresh
+        const guestUser = await API.createGuestSession();
+        if (guestUser) {
+            State.set('user', guestUser);
+            this.updateUserUI(guestUser);
+        }
+        this.navigateTo('home');
     },
 
     jamTimer: null,
